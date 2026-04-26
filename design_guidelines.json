@@ -1,0 +1,174 @@
+{
+  "project": {
+    "name": "CodeMaster Academy",
+    "platform": "Expo React Native",
+    "design_archetype": "Gamified Tech / Educational (Duolingo + Codecademy hybrid)",
+    "theme": "Light mode primary with robust dark mode support"
+  },
+  "colors": {
+    "primary": {
+      "blue": "#3B82F6",
+      "blue_dark": "#2563EB",
+      "purple": "#8B5CF6",
+      "purple_dark": "#7C3AED"
+    },
+    "background": {
+      "main": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "dark_mode": "#0F172A",
+      "code_block": "#1E293B"
+    },
+    "text": {
+      "primary": "#0F172A",
+      "secondary": "#64748B",
+      "inverse": "#FFFFFF",
+      "code": "#F8FAFC"
+    },
+    "status": {
+      "success": "#22C55E",
+      "error": "#EF4444",
+      "warning": "#F59E0B"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "heading": "System",
+      "body": "System",
+      "code": "monospace"
+    },
+    "sizes": {
+      "h1": 32,
+      "h2": 24,
+      "h3": 20,
+      "body": 16,
+      "small": 14,
+      "caption": 12
+    },
+    "weights": {
+      "bold": "800",
+      "semibold": "600",
+      "regular": "400"
+    }
+  },
+  "spacing_and_layout": {
+    "grid_base_pt": 8,
+    "screen_padding": 16,
+    "card_padding": 16,
+    "touch_target_min_pt": 44,
+    "border_radii": {
+      "small": 8,
+      "medium": 16,
+      "large": 24,
+      "pill": 9999
+    }
+  },
+  "components": {
+    "primary_button": {
+      "background_color": "#3B82F6",
+      "border_radius": 24,
+      "padding_vertical": 16,
+      "min_height": 56,
+      "border_bottom_width": 4,
+      "border_bottom_color": "#2563EB",
+      "text_style": "bold, size 16, color white",
+      "active_opacity": 0.8
+    },
+    "card": {
+      "background_color": "#FFFFFF",
+      "border_radius": 16,
+      "padding": 16,
+      "border_width": 2,
+      "border_color": "#E2E8F0",
+      "shadow": {
+        "color": "#000000",
+        "opacity": 0.05,
+        "offset": { "width": 0, "height": 4 },
+        "radius": 8
+      }
+    },
+    "code_block": {
+      "background_color": "#1E293B",
+      "border_radius": 12,
+      "padding": 16,
+      "text_color": "#F8FAFC",
+      "font_family": "monospace"
+    },
+    "bottom_tabs": {
+      "background_color": "#FFFFFF",
+      "active_tint_color": "#3B82F6",
+      "inactive_tint_color": "#64748B",
+      "border_top_width": 1,
+      "border_top_color": "#E2E8F0"
+    }
+  },
+  "icons_mapping": {
+    "Python": { "family": "MaterialCommunityIcons", "name": "language-python", "color": "#3B82F6" },
+    "JavaScript": { "family": "MaterialCommunityIcons", "name": "language-javascript", "color": "#F59E0B" },
+    "HTML_CSS": { "family": "MaterialCommunityIcons", "name": "language-html5", "color": "#EF4444" },
+    "Java": { "family": "MaterialCommunityIcons", "name": "language-java", "color": "#EF4444" },
+    "Cpp": { "family": "MaterialCommunityIcons", "name": "language-cpp", "color": "#3B82F6" },
+    "CSharp": { "family": "MaterialCommunityIcons", "name": "language-csharp", "color": "#8B5CF6" },
+    "PHP": { "family": "MaterialCommunityIcons", "name": "language-php", "color": "#6366F1" },
+    "SQL": { "family": "MaterialCommunityIcons", "name": "database", "color": "#14B8A6" },
+    "Kotlin": { "family": "MaterialCommunityIcons", "name": "language-kotlin", "color": "#8B5CF6" },
+    "Swift": { "family": "MaterialCommunityIcons", "name": "language-swift", "color": "#F97316" },
+    "TypeScript": { "family": "MaterialCommunityIcons", "name": "language-typescript", "color": "#3B82F6" },
+    "Go": { "family": "MaterialCommunityIcons", "name": "language-go", "color": "#0EA5E9" },
+    "Rust": { "family": "MaterialCommunityIcons", "name": "language-rust", "color": "#0F172A" },
+    "Ruby": { "family": "MaterialCommunityIcons", "name": "language-ruby", "color": "#EF4444" },
+    "Dart": { "family": "MaterialIcons", "name": "code", "color": "#0EA5E9" },
+    "R": { "family": "MaterialCommunityIcons", "name": "language-r", "color": "#2563EB" },
+    "Bash": { "family": "MaterialCommunityIcons", "name": "bash", "color": "#1E293B" }
+  },
+  "screen_specs": {
+    "Splash_Onboarding": {
+      "layout": "Centered content with bottom CTA",
+      "elements": "Logo, Title, 'Inizia ora' pill button",
+      "background": "White or subtle blue gradient"
+    },
+    "Auth": {
+      "layout": "Form inside rounded card layout",
+      "elements": "Email/Password inputs (height 48, borderRadius 12), Submit button"
+    },
+    "Home_Dashboard": {
+      "header": "User streak icon, Gems/Score, Profile avatar",
+      "sections": [
+        "Percorsi (Horizontal scroll cards)",
+        "Corsi Consigliati (Vertical list)",
+        "Progress & Badges summary"
+      ]
+    },
+    "Languages": {
+      "layout": "2-column grid of Language Cards",
+      "card_content": "Icon, Title, Progress Bar (Levels: Base, Intermedio, Avanzato, Pro)"
+    },
+    "Lesson": {
+      "layout": "Scrollview for content, sticky bottom footer for 'Completa' button",
+      "elements": "Text blocks, CodeBlock component, CTA"
+    },
+    "Quiz_Exercise": {
+      "layout": "Progress bar top, Question text, 4 Choice buttons or fill-in-the-blanks (large touch areas)",
+      "interaction": "Selection highlights green/red, shows bottom sheet with explanation"
+    },
+    "AI_Tutor": {
+      "layout": "Chat interface",
+      "elements": "Purple accent for AI bubbles, input field at bottom"
+    },
+    "Paths": {
+      "content": "Web Dev, Python Dev, App Dev, Backend, Data Analyst tracks with timeline UI"
+    },
+    "Profile_Pricing": {
+      "sections": "Stats, Leaderboard rank, Certificates, Pricing plans (Free, Pro Mensile, Pro Annuale, Lifetime)"
+    }
+  },
+  "animations": {
+    "button_press": "Scale to 0.95 and reduce bottom border height (react-native-reanimated)",
+    "progress_bar": "Smooth width fill animation on mount",
+    "lesson_complete": "Confetti effect or slide-up success banner"
+  },
+  "testing": {
+    "attribute": "testID",
+    "convention": "kebab-case",
+    "example": "<TouchableOpacity testID='login-button'>"
+  }
+}
