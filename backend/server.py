@@ -437,8 +437,8 @@ async def root():
 async def register(body: RegisterRequest, request: Request):
     return await _register_impl(body)
 
-@limiter.limit("10/minute")
 @api.post("/auth/login")
+@limiter.limit("10/minute")
 async def login(body: LoginRequest, request: Request):
     return await _login_impl(body)
 

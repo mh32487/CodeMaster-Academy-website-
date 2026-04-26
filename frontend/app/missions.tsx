@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../src/api';
 import { useAuth } from '../src/AuthContext';
@@ -10,6 +10,7 @@ import { localized, Lang } from '../src/i18n';
 
 export default function MissionsScreen() {
   const { lang, refresh } = useAuth();
+  const router = useRouter();
   const [missions, setMissions] = useState<any[]>([]);
   const [challenge, setChallenge] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -19,6 +20,14 @@ export default function MissionsScreen() {
       const [m, c] = await Promise.all([api.get('/missions/today'), api.get('/challenges/weekly')]);
       setMissions(m.data.missions || []);
       setChallenge(c.data?.challenge || null);
+    } catch (e: any) {
+      if (e?.response?.status === 401) {
+        router.replace('/(auth)/login');
+        return;
+      }
+      // Other errors: show empty state
+      setMissions([]);
+      setChallenge(null);
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
