@@ -65,6 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await tokenStore.set(data.token);
     setUser(data.user);
     if (data.user?.language) setLangState(data.user.language as Lang);
+    // Register push token (fire and forget)
+    import('./push').then(m => m.registerPushToken().catch(() => {}));
   };
 
   const register = async (email: string, password: string, name: string, refCode?: string) => {
@@ -74,6 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     await tokenStore.set(data.token);
     setUser(data.user);
+    import('./push').then(m => m.registerPushToken().catch(() => {}));
   };
 
   const logout = async () => {

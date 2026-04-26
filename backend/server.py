@@ -37,6 +37,9 @@ from missions import (
 )
 from admin_advanced import router as admin_advanced_router
 from legal import router as legal_router
+from email_service import router as email_router, send_email
+from push_service import router as push_router, send_push
+from affiliate import router as affiliate_router
 from seed_data import (
     LANGUAGES,
     LEVELS,
@@ -472,6 +475,12 @@ async def _register_impl(body: RegisterRequest):
         "created_at": now_iso(),
     }
     await db.users.insert_one(user_doc)
+
+    # Send welcome email (best-effort, mock provider logs to db)
+    try:
+        await send_email(db, body.email.lower(), "welcome", {"name": body.name, "referral_code": user_doc["referral_code"]}, body.language)
+    except Exception:
+        pass
 
     token = create_access_token(user_id, body.email.lower(), "user")
     user = await get_user(user_id)
@@ -1084,6 +1093,9 @@ app.include_router(certificates_router)
 app.include_router(gamification_router)
 app.include_router(admin_advanced_router)
 app.include_router(legal_router)
+app.include_router(email_router)
+app.include_router(push_router)
+app.include_router(affiliate_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

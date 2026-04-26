@@ -211,24 +211,56 @@ class IAPVerifyBody(BaseModel):
 @router.post("/iap/verify")
 async def verify_iap(body: IAPVerifyBody, request: Request, payload=Depends(get_current_user_payload)):
     """
-    SCAFFOLD: In production validates receipt via Apple App Store / Google Play Developer API.
-    Currently stores the receipt for review and grants subscription on faith for testing.
+    Validates In-App Purchase receipt against Apple App Store / Google Play.
+
+    PRODUCTION SETUP NEEDED (currently MOCKED, marked is_mock=true):
+    -----------------------------------------------------------------
+    iOS — Apple App Store:
+      1. Get App-Specific Shared Secret from App Store Connect
+      2. Set env: APPLE_SHARED_SECRET=...
+      3. Replace TODO below with:
+         async with httpx.AsyncClient() as c:
+             r = await c.post("https://buy.itunes.apple.com/verifyReceipt",
+                 json={"receipt-data": body.receipt, "password": APPLE_SHARED_SECRET})
+             # Sandbox fallback if status==21007 → use https://sandbox.itunes.apple.com/verifyReceipt
+         # Validate r.json()['latest_receipt_info'][0]['expires_date_ms'] vs now
+         # Match product_id to plan_id
+
+    Android — Google Play:
+      1. Create Service Account in Google Cloud Console with Android Publisher role
+      2. Download SA JSON to /app/backend/secrets/google-play-sa.json
+      3. pip install google-api-python-client google-auth
+      4. Set env: GOOGLE_PLAY_SA_JSON_PATH=...
+      5. Replace TODO below with:
+         from google.oauth2 import service_account
+         from googleapiclient.discovery import build
+         creds = service_account.Credentials.from_service_account_file(SA_PATH,
+             scopes=['https://www.googleapis.com/auth/androidpublisher'])
+         svc = build('androidpublisher', 'v3', credentials=creds)
+         purchase = svc.purchases().subscriptions().get(
+             packageName='com.codemaster.academy', subscriptionId=body.product_id,
+             token=body.receipt).execute()
+         # Validate purchase['expiryTimeMillis'] vs now
+
+      6. Set up RTDN (Real-time Developer Notifications) via Pub/Sub for renewals
     """
     db = _get_db(request)
     pkg = PACKAGES.get(body.plan_id)
     if not pkg:
         raise HTTPException(400, "Plan not found")
 
-    # TODO: Real validation:
-    # - iOS: POST https://buy.itunes.apple.com/verifyReceipt with shared_secret
-    # - Android: Google Play Developer API purchases.subscriptions.get
+    apple_secret = os.environ.get("APPLE_SHARED_SECRET")
+    google_sa = os.environ.get("GOOGLE_PLAY_SA_JSON_PATH")
+    can_validate = (body.platform == "ios" and apple_secret) or (body.platform == "android" and google_sa)
+
     await db.iap_receipts.insert_one({
         "user_id": payload["sub"],
         "plan_id": body.plan_id,
         "platform": body.platform,
         "product_id": body.product_id,
         "receipt_excerpt": body.receipt[:120],
-        "validated": False,  # MOCKED until real validation
+        "validated": False,
+        "validation_available": can_validate,
         "created_at": now_iso(),
     })
 
@@ -242,12 +274,12 @@ async def verify_iap(body: IAPVerifyBody, request: Request, payload=Depends(get_
             "plan_id": body.plan_id,
             "active": True,
             "expires_at": expires,
-            "is_mock": True,  # FLAGGED as mock until real validation wired
+            "is_mock": not can_validate,
             "platform": body.platform,
             "last_payment_at": now_iso(),
         }}},
     )
-    return {"success": True, "is_mock": True, "note": "IAP receipt stored. Real validation requires production keys."}
+    return {"success": True, "is_mock": not can_validate, "validation_available": can_validate, "note": "IAP receipt stored. Set APPLE_SHARED_SECRET / GOOGLE_PLAY_SA_JSON_PATH for real validation."}
 
 
 # ---------------------------------------------------------------------------

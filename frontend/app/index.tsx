@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../src/AuthContext';
@@ -13,8 +14,15 @@ export default function Splash() {
   const { user, loading, lang } = useAuth();
 
   useEffect(() => {
-    if (!loading && user) {
-      router.replace('/(tabs)/home');
+    if (!loading) {
+      if (user) {
+        router.replace('/(tabs)/home');
+      } else {
+        // First-time users go through onboarding
+        AsyncStorage.getItem('onboarding_done').then((done) => {
+          if (!done) router.replace('/onboarding');
+        });
+      }
     }
   }, [user, loading, router]);
 
