@@ -82,7 +82,29 @@ export default function Tutor() {
             <View style={styles.suggestions}>
               <Text style={styles.suggLabel}>Prova a chiedere:</Text>
               {suggestions.map((s) => (
-                <TouchableOpacity key={s} style={styles.suggBtn} onPress={() => setInput(s)} testID={`sugg-${s.slice(0, 8)}`}>
+                <TouchableOpacity
+                  key={s}
+                  style={styles.suggBtn}
+                  testID={`sugg-${s.slice(0, 8)}`}
+                  onPress={async () => {
+                    setInput('');
+                    setMessages((m) => [...m, { role: 'user', content: s, ts: Date.now() }]);
+                    setLoading(true);
+                    try {
+                      const { data } = await api.post('/tutor/chat', {
+                        message: s,
+                        language: lang,
+                        session_id: sessionRef.current || undefined,
+                      });
+                      sessionRef.current = data.session_id;
+                      setMessages((m) => [...m, { role: 'assistant', content: data.reply, ts: Date.now() }]);
+                    } catch {
+                      setMessages((m) => [...m, { role: 'assistant', content: 'Errore di connessione.', ts: Date.now() }]);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
                   <Text style={styles.suggText}>{s}</Text>
                 </TouchableOpacity>
               ))}
