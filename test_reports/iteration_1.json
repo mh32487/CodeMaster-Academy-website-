@@ -1,0 +1,44 @@
+{
+  "summary": "First test cycle for CodeMaster Academy MVP. Backend: 25/25 pytest cases PASS (auth, languages, courses, lessons, quizzes, exercises, paths/projects, progress, leaderboard, badges, referral, certificates, tutor GPT-5.2, plans, mock checkout, admin stats/users/RBAC). Frontend: All major mobile screens render correctly on 390x844 viewport - splash, login, home dashboard, languages (17 cards, 3 Disponibile / 14 Coming soon), Python language detail (4 levels, lessons/quiz/exercises), lesson view with code block + Completa lezione, quiz with options + Avanti, exercise with editor + Invia, AI Tutor (chips fill input + send icon returns real GPT-5.2 reply), profile with badges & language chips, pricing 4 plans, leaderboard podium + ranked list with user position, referral code share, certificates empty state, admin dashboard (stats grid + users list) and access-denied screen for non-admin.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AI Tutor suggestion chips", "issue": "Tapping a suggestion chip only fills the input field - it does NOT auto-send. User must tap the send icon afterward. Common UX pattern is auto-send on chip tap.", "testID": "n/a", "priority": "LOW"},
+      {"component": "AI Tutor reply rendering", "issue": "Markdown reply from GPT-5.2 (code fences ```js, **bold**, headings ###) is displayed as raw text instead of rendered markdown. Consider react-native-markdown-display.", "testID": "n/a", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All", "issues": ["Expo deprecation warnings in console: 'shadow*' style props deprecated, use boxShadow (cosmetic, not blocking)", "Package version mismatch warnings: @react-native-async-storage/async-storage@3.0.2 vs expected 2.2.0 and expo-secure-store@55.0.13 vs expected ~15.0.8 (no functional impact observed)"]}
+    ],
+    "react_native_issues": [
+      {"component": "Login button", "issue": "Header title 'Accedi' and submit button 'Accedi' share identical text with no testID. Both elements are picked up by get_by_text. Add testID='login-submit' on TouchableOpacity to make selectors unambiguous.", "priority": "LOW"},
+      {"component": "Most interactive elements", "issue": "Buttons (TouchableOpacity) lack testID props app-wide. Add testIDs on critical interactions (login-submit, lesson-complete, quiz-submit, tutor-send, etc.) for reliable automated testing."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/conftest.py", "/app/backend/tests/test_codemaster_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional UX) Auto-send AI Tutor message when a suggestion chip is tapped (currently only fills input).",
+    "(Optional UX) Render assistant markdown replies with a markdown component instead of plain Text so code blocks and headings format properly.",
+    "(Optional polish) Add testID props to interactive components (TouchableOpacity/Pressable) across screens to enable robust automated testing - none are required for functionality.",
+    "(Optional polish) Replace deprecated shadow* style props with boxShadow to silence RN web warnings and align package versions per Expo doctor."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~1035 lines - approaching the 700-line guideline. Consider splitting into routers (auth, courses, tutor, admin, billing).",
+    "Mock checkout updates user.subscription with is_mock=true (clearly flagged - good).",
+    "All endpoints exclude MongoDB _id correctly via projection or clean_doc.",
+    "JWT auth wired via get_current_user_payload / get_current_admin_payload dependencies; admin endpoint returns 401/403 for non-admin (verified)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (created)",
+    "/app/backend/tests/test_codemaster_api.py (created)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% of flows tested rendered & functional"},
+  "seed_data_creation": "Created one TEST_user via /api/auth/register during test_register_and_login. Demo and admin users seeded by backend startup. No manual seeding required.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend uses EXPO_PUBLIC_BACKEND_URL (note the PUBLIC suffix), not EXPO_BACKEND_URL. Login form has duplicate 'Accedi' text (heading + button); use accedi[1] (the second match) when clicking the button via get_by_text. Tutor suggestion chips fill input only - need to tap send icon (around x=360,y=750 on 390x844 viewport) to actually submit. Demo user XP grows when tests run lessons/exercises (not 320 anymore).",
+  "rca_of_issue": "No blocking issues found. All requested features in the review request are functional end-to-end."
+}
