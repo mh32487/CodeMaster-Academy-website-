@@ -84,8 +84,9 @@ export default function Home() {
           </View>
         </Card>
 
-        <View style={styles.row}>
-          <QuickAction icon="trophy-variant" color={colors.status.warning} label={t('leaderboard', lang)} onPress={() => router.push('/leaderboard')} testID="qa-leaderboard" />
+          <View style={styles.row}>
+          <QuickAction icon="target" color={colors.status.warning} label="Missioni" onPress={() => router.push('/missions')} testID="qa-missions" />
+          <QuickAction icon="trophy-variant" color={colors.primary.blue} label={t('leaderboard', lang)} onPress={() => router.push('/leaderboard')} testID="qa-leaderboard" />
           <QuickAction icon="account-multiple-plus" color={colors.primary.purple} label={t('refer_friends', lang)} onPress={() => router.push('/referral')} testID="qa-referral" />
           <QuickAction icon="certificate" color={colors.status.success} label={t('certificates', lang)} onPress={() => router.push('/certificates')} testID="qa-certs" />
         </View>

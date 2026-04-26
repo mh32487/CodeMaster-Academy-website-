@@ -25,6 +25,10 @@ export default function RootLayout() {
             <Stack.Screen name="leaderboard" options={{ headerShown: true, title: '' }} />
             <Stack.Screen name="certificates" options={{ headerShown: true, title: '' }} />
             <Stack.Screen name="referral" options={{ headerShown: true, title: '' }} />
+            <Stack.Screen name="payment/success" options={{ headerShown: true, title: '' }} />
+            <Stack.Screen name="legal/[slug]" options={{ headerShown: true, title: '' }} />
+            <Stack.Screen name="missions" options={{ headerShown: true, title: '' }} />
+            <Stack.Screen name="study-plan" options={{ headerShown: true, title: '' }} />
             <Stack.Screen name="admin" options={{ headerShown: true, title: '' }} />
           </Stack>
         </AuthProvider>

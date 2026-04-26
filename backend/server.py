@@ -7,11 +7,14 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 from dotenv import load_dotenv
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -22,7 +25,18 @@ from auth import (
     create_access_token,
     get_current_user_payload,
     get_current_admin_payload,
+    decode_token,
 )
+import jwt as _pyjwt
+from billing import router as billing_router, handle_stripe_webhook_request
+from certificates_pdf import router as certificates_router
+from missions import (
+    router as gamification_router,
+    increment_mission_metric,
+    increment_challenge_metric,
+)
+from admin_advanced import router as admin_advanced_router
+from legal import router as legal_router
 from seed_data import (
     LANGUAGES,
     LEVELS,
@@ -58,6 +72,13 @@ EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 # App
 # ---------------------------------------------------------------------------
 app = FastAPI(title="CodeMaster Academy API")
+app.state.db = db  # Expose db to routers via request.app.state.db
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -413,7 +434,16 @@ async def root():
 
 
 @api.post("/auth/register")
-async def register(body: RegisterRequest):
+async def register(body: RegisterRequest, request: Request):
+    return await _register_impl(body)
+
+@limiter.limit("10/minute")
+@api.post("/auth/login")
+async def login(body: LoginRequest, request: Request):
+    return await _login_impl(body)
+
+
+async def _register_impl(body: RegisterRequest):
     existing = await db.users.find_one({"email": body.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -448,8 +478,14 @@ async def register(body: RegisterRequest):
     return {"token": token, "user": user}
 
 
-@api.post("/auth/login")
-async def login(body: LoginRequest):
+@api.post("/auth/refresh")
+async def auth_refresh(payload=Depends(get_current_user_payload)):
+    """Issue a fresh access token without re-login (uses still-valid token)."""
+    new_token = create_access_token(payload["sub"], payload.get("email", ""), payload.get("role", "user"))
+    return {"token": new_token}
+
+
+async def _login_impl(body: LoginRequest):
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -555,6 +591,12 @@ async def complete_lesson(body: LessonCompleteRequest, payload=Depends(get_curre
     )
     await update_streak(user_id)
     await evaluate_badges(user_id)
+    await increment_mission_metric(db, user_id, "lessons", 1)
+    await increment_mission_metric(db, user_id, "xp_today", xp)
+    await increment_challenge_metric(db, user_id, "lessons", 1)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "stats.streak_days": 1})
+    if user:
+        await increment_challenge_metric(db, user_id, "streak_days", set_value=user.get("stats", {}).get("streak_days", 0))
 
     return {"already_completed": False, "xp_gained": xp}
 
@@ -823,6 +865,9 @@ async def tutor_chat(body: TutorChatRequest, payload=Depends(get_current_user_pa
         "created_at": now_iso(),
     })
 
+    # Mission tracking
+    await increment_mission_metric(db, user_id, "tutor_messages", 1)
+
     return {"session_id": session_id, "reply": reply}
 
 
@@ -906,10 +951,10 @@ async def my_referral(payload=Depends(get_current_user_payload)):
 # ---------------------------------------------------------------------------
 # Certificates
 # ---------------------------------------------------------------------------
-@api.get("/certificates/me")
-async def my_certificates(payload=Depends(get_current_user_payload)):
+@api.get("/certificates/me-legacy")
+async def my_certificates_legacy(payload=Depends(get_current_user_payload)):
+    """DEPRECATED — use /api/certificates/me from certificates_pdf module."""
     user_id = payload["sub"]
-    # Certificates: courses where 100% lessons done
     courses = await db.courses.find({}, {"_id": 0}).to_list(200)
     certificates = []
     user = await get_user(user_id)
@@ -1023,9 +1068,22 @@ async def admin_create_lesson(body: AdminLessonCreate, payload=Depends(get_curre
 
 
 # ---------------------------------------------------------------------------
+# Stripe webhook (mounted at /api/webhook/stripe)
+# ---------------------------------------------------------------------------
+@app.post("/api/webhook/stripe")
+async def stripe_webhook(request: Request):
+    return await handle_stripe_webhook_request(request)
+
+
+# ---------------------------------------------------------------------------
 # Mount router & CORS
 # ---------------------------------------------------------------------------
 app.include_router(api)
+app.include_router(billing_router)
+app.include_router(certificates_router)
+app.include_router(gamification_router)
+app.include_router(admin_advanced_router)
+app.include_router(legal_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

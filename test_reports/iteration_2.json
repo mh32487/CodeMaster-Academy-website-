@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 2 testing of CodeMaster Academy V2 upgrades. Backend pytest: 21/22 PASS (95%). New endpoints validated: Stripe checkout (returns 7.99 with WELCOME20 coupon), coupon check, missions/today (3 missions w/ id+title+target+xp_reward), challenges/weekly, level/me, JWT refresh, tutor/analyze-code (GPT-5.2 returns feedback+errors+suggestions), tutor/study-plan, legal/privacy+terms, admin/analytics/retention (total_users, retention_7d_percent/30d_percent, ARPU), admin/analytics/conversion-funnel (registered/completed_first_lesson/passed_first_quiz/subscribed_pro), admin/lessons PUT (title is dict {it,en} - schema requires LocalizedDict) + RBAC (403 for non-admin), admin/coupons POST + verify via public coupon check, admin/users/{id}/subscription PUT (body uses plan_id not plan), certificates/me. Lesson completion increments mission progress correctly. Frontend: Stripe + coupon flow works end-to-end (input WELCOME20 -> price drops to €7.99 with success indicator), /pricing label includes 'Stripe', /study-plan has 'Genera piano' button, /legal/privacy & /legal/terms render content from backend, /payment/success renders failed state without session_id. CRITICAL UI BUG: /missions screen throws uncaught 401 RED SCREEN ERROR if user is not authenticated (no token guard before API call). CRITICAL BACKEND BUG: rate-limit on /api/auth/login NOT enforced - 12 rapid requests all return 401, never 429 (decorator stacking order is wrong: @limiter.limit must be INSIDE @api.post, currently it is OUTSIDE so slowapi never wraps the route).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login", "issue": "Rate limit (10/min via slowapi) is NOT enforced. 12 rapid invalid login attempts returned 12x 401, never 429. Root cause: decorator stacking order in server.py:440-443 - `@limiter.limit('10/minute')` is placed ABOVE `@api.post('/auth/login')`. Python applies bottom decorator first, so api.post registers the bare function with FastAPI before slowapi can wrap it. Fix: swap the two decorators (api.post must be outer/top, limiter.limit must be inner/bottom).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/admin/analytics/retention", "issue": "Spec asked for keys retention_7d / retention_30d, backend returns retention_7d_percent / retention_30d_percent (and active_7d/active_30d for raw counts). Either rename to match spec or document; data is otherwise correct."},
+      {"endpoint": "PUT /api/admin/users/{user_id}/subscription", "issue": "Body schema requires field `plan_id` (not `plan`). Spec sample 'updates plan' is ambiguous - confirm intended contract with frontend admin panel."},
+      {"endpoint": "PUT /api/admin/lessons/{lesson_id}", "issue": "Body fields are LocalizedDict {it,en} (title, content, code_explanation). Plain string fails with 422. Document this for frontend admin CRUD UI."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/missions.tsx", "issue": "When the user navigates to /missions without a valid JWT (e.g. cold load / expired token), the screen renders a red-screen 'Uncaught Error: Request failed with status code 401' from load() at line 19:22. Missing try/catch with auth-guard redirect to /login or graceful empty state.", "testID": "n/a", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All", "issues": ["Many shadow* style props deprecated warnings (cosmetic).", "props.pointerEvents deprecated warning (cosmetic)."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_codemaster_v2.py",
+    "/app/backend/tests/test_codemaster_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_v2_results.xml"
+  ],
+  "action_items": [
+    "FIX rate-limit decorator order in /app/backend/server.py around lines 440-443: swap to `@api.post('/auth/login')` ABOVE `@limiter.limit('10/minute')`. Without this, all rate limits on auth are silently disabled (security risk).",
+    "FIX /app/frontend/app/missions.tsx: wrap load() promise.all in try/catch; on 401 redirect to /(auth)/login or render an empty/login-required state to prevent red-screen crash for unauthenticated users.",
+    "(Optional) Align retention API field names with spec: add aliases retention_7d / retention_30d (keep _percent variants for backward compat) so frontend admin retention chart can use either."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1094 lines - exceeds the 700-line guideline. Consider splitting auth, courses, admin into routers (legal/missions/billing/admin_advanced are already routers - good).",
+    "Stripe checkout returns proper amount 9.99 -> 7.99 with WELCOME20 (server-side enforced from PACKAGES dict; frontend amount untrusted - good).",
+    "Coupon check correctly returns 404 for unknown codes, 400 for inactive/exhausted.",
+    "Admin-only endpoints correctly return 401/403 for non-admin via get_current_admin_payload dependency.",
+    "Rate limit middleware is registered (app.state.limiter) but the per-route decorator order bug renders @limiter.limit('10/minute') ineffective on /auth/login."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_codemaster_v2.py (created)"
+  ],
+  "success_rate": {"backend": "95% (21/22)", "frontend": "Most flows OK; 1 critical red-screen on /missions when unauthenticated"},
+  "seed_data_creation": "Created 1 admin coupon TEST{uuid} via /api/admin/coupons (low residual impact). Demo subscription temporarily flipped to pro_monthly then reverted to free.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend uses EXPO_PUBLIC_BACKEND_URL. Test script should login at /(auth)/login (click 'Accedi' on splash first, then fill the two inputs and press the button) BEFORE navigating to authenticated screens like /missions or /(tabs)/profile - otherwise the missions screen throws a red error. /admin/lessons PUT body must send title/content as {it: '...', en: '...'} dict, not raw string. /admin/users/{id}/subscription expects plan_id not plan. Retention endpoint returns retention_7d_percent / retention_30d_percent (not retention_7d / retention_30d).",
+  "rca_of_issue": "Rate-limit bug RCA: in /app/backend/server.py, the decorators on /api/auth/login are stacked as `@limiter.limit('10/minute')` then `@api.post('/auth/login')` (lines 440-441). Python applies decorators bottom-up: api.post wraps the function first and immediately registers the BARE coroutine into FastAPI's routing table; the subsequent @limiter.limit then wraps the resulting decorated value, but FastAPI already holds the unwrapped reference. Verified by 12 rapid login requests all returning 401 (never 429). Fix: swap decorators to `@api.post('/auth/login')` first, `@limiter.limit('10/minute')` second. Reproduction in test TestRateLimit::test_rate_limit_login. Missions red-screen RCA: app/missions.tsx load() does Promise.all([api.get('/missions/today'), api.get('/challenges/weekly')]) without await-try/catch; when JWT is missing/expired, axios throws and the error propagates to React's render boundary causing the dev red screen."
+}

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Platform, Linking } from 'react-native';
 import { Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../src/api';
 import { useAuth } from '../src/AuthContext';
+import { tokenStore } from '../src/api';
 import { colors, radii, spacing } from '../src/theme';
 import { PrimaryButton } from '../src/components';
 import { t, localized, Lang } from '../src/i18n';
@@ -53,7 +54,25 @@ export default function Certificates() {
               <PrimaryButton
                 label="📄 Scarica PDF"
                 variant="ghost"
-                onPress={() => Alert.alert('PDF Demo', 'In produzione genereremo un PDF reale del certificato firmato digitalmente.')}
+                onPress={async () => {
+                  const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+                  const url = `${base}/api/certificates/pdf/${c.course_id}`;
+                  const token = await tokenStore.get();
+                  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                    // Fetch with auth and trigger download
+                    try {
+                      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+                      const blob = await res.blob();
+                      const blobUrl = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = blobUrl; a.download = `certificate_${c.id}.pdf`;
+                      document.body.appendChild(a); a.click(); a.remove();
+                      URL.revokeObjectURL(blobUrl);
+                    } catch (e) { Alert.alert('Errore', 'Download fallito'); }
+                  } else {
+                    await Linking.openURL(`${url}?token=${token}`).catch(() => Alert.alert('Apri nel browser', url));
+                  }
+                }}
                 testID={`download-cert-${c.id}`}
               />
             </View>

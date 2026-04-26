@@ -115,6 +115,8 @@ export default function Profile() {
         </Card>
 
         <View style={{ gap: 8 }}>
+          <MenuRow icon="target" label="Missioni & Sfide" onPress={() => router.push('/missions')} testID="menu-missions" />
+          <MenuRow icon="brain" label="Piano studio AI" onPress={() => router.push('/study-plan')} color={colors.primary.purple} testID="menu-study-plan" />
           <MenuRow icon="trophy-variant" label={t('leaderboard', lang)} onPress={() => router.push('/leaderboard')} testID="menu-leaderboard" />
           <MenuRow icon="certificate" label={t('certificates', lang)} onPress={() => router.push('/certificates')} testID="menu-certs" />
           <MenuRow icon="account-multiple-plus" label={t('refer_friends', lang)} onPress={() => router.push('/referral')} testID="menu-refer" />
@@ -123,6 +125,12 @@ export default function Profile() {
             <MenuRow icon="shield-crown" label={t('admin_panel', lang)} onPress={() => router.push('/admin')} color={colors.primary.purple} testID="menu-admin" />
           )}
           <MenuRow icon="logout" label={t('logout', lang)} onPress={onLogout} color={colors.status.error} testID="menu-logout" />
+        </View>
+
+        <View style={styles.legalRow}>
+          <TouchableOpacity onPress={() => router.push('/legal/terms')} testID="profile-terms"><Text style={styles.legalLink}>Termini</Text></TouchableOpacity>
+          <Text style={{ color: colors.text.tertiary }}> · </Text>
+          <TouchableOpacity onPress={() => router.push('/legal/privacy')} testID="profile-privacy"><Text style={styles.legalLink}>Privacy</Text></TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -177,4 +185,6 @@ const styles = StyleSheet.create({
   langChipText: { fontWeight: '800', color: colors.text.primary, fontSize: 13 },
   menuRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 14, borderRadius: radii.md, borderWidth: 2, borderColor: colors.border, gap: 12 },
   menuLabel: { flex: 1, fontSize: 15, fontWeight: '600' },
+  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24 },
+  legalLink: { color: colors.primary.blue, fontSize: 13, fontWeight: '700' },
 });
