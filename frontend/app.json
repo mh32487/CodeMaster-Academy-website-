@@ -22,7 +22,11 @@
         "backgroundColor": "#3B82F6"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["INTERNET", "VIBRATE", "POST_NOTIFICATIONS"]
+      "permissions": [
+        "INTERNET",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -40,7 +44,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#3B82F6"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
