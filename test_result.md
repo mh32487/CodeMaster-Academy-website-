@@ -374,12 +374,25 @@ frontend:
     working: true
     file: "frontend/app/admin.tsx"
     stuck_count: 0
-    priority: "medium"
+    priority: "high"
     needs_retesting: false
     status_history:
         -working: true
         -agent: "testing"
         -comment: "VERIFIED. Admin user lands on /admin showing Dashboard Admin: 15 utenti totali, 1 Pro user, 6.67% conversion, 17 linguaggi, 85 lezioni, 5 completamenti, 68 quiz, 2 transazioni. Top linguaggi (python #1, javascript #2). Recent users list with Demo Student, Alice, Marco etc. plus admin badge."
+        -working: true
+        -agent: "testing"
+        -comment: |
+          REWRITTEN admin.tsx RETESTED on mobile 390x844. ALL SECTIONS RENDER CORRECTLY:
+          - testID admin-screen ✓, admin-revenue-card ✓ (purple hero with €0.00 total revenue + ARPU €0.00)
+          - All 4 required stat testIDs present: stat-users (18), stat-pro (2), stat-conversion (11.11%), stat-transactions (2) ✓; plus languages (17), lessons (85), quizzes (68), completions (5) ✓
+          - Retention section (📊) with 3 boxes: 24H (7, 41%), 7 GIORNI (17, 100%), 30 GIORNI (17, 100%) ✓
+          - Funnel di conversione (🎯) with 4 progressive bars: Registrati 17/100%, Prima lezione 2/12%, Primo quiz superato 1/6%, Pro subscriber ✓
+          - Ultime transazioni (💳) list rendered, testID txn-0 present ✓
+          - Piani attivi (📦) ✓ - Top linguaggi (🏆) ✓ - Utenti recenti ✓
+          - Note at bottom mentions TEST MODE + card 4242 4242 4242 4242 ✓
+          - No 4xx/5xx errors on /api/admin/stats, /api/admin/users, /api/admin/analytics/retention, /api/admin/analytics/conversion-funnel, /api/admin/transactions (all 200 with admin bearer).
+          - Minor: "Ricavi totali" and "24h/7 giorni/30 giorni" use CSS textTransform:uppercase so string match is case-insensitive only; visually correct.
 
 metadata:
   created_by: "main_agent"
@@ -400,6 +413,38 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+    -agent: "testing"
+    -message: |
+      ADMIN.TSX REWRITE + STRIPE CHECKOUT FRONTEND FLOW — RETESTED (mobile 390x844). ALL PASSED.
+
+      TEST 1 Admin dashboard (/admin, admin user):
+        - admin-screen ✓, admin-revenue-card ✓ (purple hero, €0.00 revenue, ARPU €0.00)
+        - Stats grid: stat-users (18), stat-pro (2), stat-conversion (11.11%), stat-transactions (2) + languages(17) lessons(85) quizzes(68) completions(5) ✓
+        - Retention: 24H (7, 41%), 7 GIORNI (17, 100%), 30 GIORNI (17, 100%) ✓
+        - Funnel: Registrati 17/100%, Prima lezione 2/12%, Primo quiz superato 1/6%, Pro subscriber ✓
+        - Ultime transazioni (testID txn-0 present), Piani attivi, Top linguaggi, Utenti recenti all render ✓
+        - Footer note with 4242 4242 4242 4242 ✓
+        - NO 4xx/5xx errors on /api/admin/stats, /users, /analytics/retention, /analytics/conversion-funnel, /transactions (all 200 with admin bearer) ✓
+
+      TEST 2 Pricing (demo user):
+        - 4 plans render: Free, Pro Mensile, Pro Annuale, Lifetime ✓
+        - WELCOME20 applied inline: "WELCOME20 — 20% di sconto applicato" banner, Pro Mensile price updated to €7.99/mese, Pro Annuale €63.99/anno ✓
+        - "Paga con Stripe" (testID choose-pro_monthly) REDIRECTS to https://checkout.stripe.com/c/pay/cs_test_... ✓ (verified via page.url after click; backend logged POST /api/billing/stripe/checkout → 200)
+        - Invalid coupon INVALID123 → backend 404 ✓ (React Native Alert.alert on web doesn't trigger browser dialog event so alert text not captured, but the 404 path is handled and no crash)
+
+      TEST 4 Regression:
+        - Affiliate screen (/affiliate, testID affiliate-screen) loads ✓
+        - Demo /home renders user info ✓
+        - Auth (admin + demo) flows persist tokens via cm_token in localStorage ✓
+
+      NOT TESTED (outside scope / documented upstream issue):
+        - Pull-to-refresh gesture on web (mobile-only interaction; RefreshControl is wired correctly in code)
+        - Stripe payment completion (not feasible — external)
+        - Stripe status polling (documented upstream Emergent proxy quirk; non-blocking)
+        - TEST 3 admin PUT subscription override (already backend-verified in previous run)
+
+      NO BUGS FOUND IN admin.tsx REWRITE. Safe to mark task working.
+
     -agent: "main"
     -message: |
       STRIPE E2E REQUEST — TEST MODE (sk_test_emergent via Emergent Stripe proxy).
