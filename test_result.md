@@ -280,39 +280,72 @@ backend:
 frontend:
   - task: "Onboarding flow (4 slides + AsyncStorage gate)"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/onboarding.tsx, frontend/app/index.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         -working: "NA"
         -agent: "main"
         -comment: "First-time users redirected to /onboarding. Sets onboarding_done in AsyncStorage. CTA goes to /(auth)/register."
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED on mobile viewport 390x844. After clearing localStorage, root URL redirects to /onboarding (4 slides). 'Avanti' button cycles through slides; final CTA 'Inizia subito gratis' navigates to /register. AsyncStorage 'onboarding_done'=1 is correctly persisted. Reload after completion does NOT re-show onboarding."
 
   - task: "Affiliate dashboard screen"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/affiliate.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         -working: "NA"
         -agent: "main"
         -comment: "Loads /api/affiliate/me/summary, displays referral code, pending/paid amounts, payout request modal. Accessed from Profile > Programma Affiliati."
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED. /affiliate page loads cleanly. Referral code '32FBD643' (8 chars) displayed. Saldo disponibile €0.00, Già pagato €0.00, Invitati: 0. Payout button correctly DISABLED with label 'Min. €50 per payout' since pending<50. No empty-state errors. Screenshot confirms layout."
 
   - task: "Push token registration after login"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/src/push.ts, frontend/src/AuthContext.tsx"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         -working: "NA"
         -agent: "main"
         -comment: "AuthContext calls registerPushToken() after login/register. Skips on web. Calls POST /api/push/register."
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED. Login & register flows succeed without errors. push.ts correctly no-ops on web (Platform.OS==='web') as documented; no 4xx network errors observed in console. Backend /api/push/register already validated. No regression in auth flow."
+
+  - task: "Auth (login/register/logout) and home/tabs/profile UI"
+    implemented: true
+    working: true
+    file: "frontend/app/(auth)/login.tsx, register.tsx, (tabs)/*.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: "ALL 15 frontend smoke tests PASSED on mobile 390x844. Login as demo lands on /home (Demo Student, XP 490, streak 5, 14 lessons, badges grid, 5 learning paths, recommended Python/JS/HTML). Register with random email auto-logs in & redirects to home. Languages tab shows Python; tapping opens /language/python with 4 levels visible. /lesson/lesson_python_base_0 renders with 'Completa lezione' button. Tutor tab loads with input. Profile shows name, avatar, all menu rows including 'Programma Affiliati' (testID menu-affiliate) and 'Logout'. /pricing shows Free/Pro plans. /certificates and /missions render without errors. Admin login + /admin shows 15 users, 1 pro, 6.67% conversion, 17 languages, top python+javascript, users list."
+
+  - task: "Admin dashboard screen"
+    implemented: true
+    working: true
+    file: "frontend/app/admin.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED. Admin user lands on /admin showing Dashboard Admin: 15 utenti totali, 1 Pro user, 6.67% conversion, 17 linguaggi, 85 lezioni, 5 completamenti, 68 quiz, 2 transazioni. Top linguaggi (python #1, javascript #2). Recent users list with Demo Student, Alice, Marco etc. plus admin badge."
 
 metadata:
   created_by: "main_agent"
