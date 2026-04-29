@@ -383,7 +383,7 @@ frontend:
         -working: true
         -agent: "testing"
         -comment: |
-          REWRITTEN admin.tsx RETESTED on mobile 390x844. ALL SECTIONS RENDER CORRECTLY:
+          REWRITTEN admin.tsx RETESTED on mobile 390x844. ALL SECTIONS RENDER CORRECTLY (see below):
           - testID admin-screen ✓, admin-revenue-card ✓ (purple hero with €0.00 total revenue + ARPU €0.00)
           - All 4 required stat testIDs present: stat-users (18), stat-pro (2), stat-conversion (11.11%), stat-transactions (2) ✓; plus languages (17), lessons (85), quizzes (68), completions (5) ✓
           - Retention section (📊) with 3 boxes: 24H (7, 41%), 7 GIORNI (17, 100%), 30 GIORNI (17, 100%) ✓
@@ -394,20 +394,109 @@ frontend:
           - No 4xx/5xx errors on /api/admin/stats, /api/admin/users, /api/admin/analytics/retention, /api/admin/analytics/conversion-funnel, /api/admin/transactions (all 200 with admin bearer).
           - Minor: "Ricavi totali" and "24h/7 giorni/30 giorni" use CSS textTransform:uppercase so string match is case-insensitive only; visually correct.
 
+  - task: "Marketing landing page (/(marketing))"
+    implemented: true
+    working: true
+    file: "frontend/app/(marketing)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: |
+          VERIFIED on Desktop 1280x800 + Mobile 390x844. testID landing-page renders. Header (web-header, header-logo, lang-it, lang-en, header-signup) present. Hero IT title 'Diventa sviluppatore con il tuo tutor AI personale' visible. Code mockup shows 'def greet(name)' with Python syntax. hero-cta-primary navigates to /register; hero-cta-secondary navigates to /pricing-web. Lang switch IT->EN updates hero title to 'Become a developer with your personal AI tutor' and reverts on click. web-footer visible. Mobile layout stacks vertically with full-width CTAs.
+
+  - task: "Marketing pricing-web page"
+    implemented: true
+    working: true
+    file: "frontend/app/(marketing)/pricing-web.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: |
+          VERIFIED. testID pricing-web-page renders with 4 plans: web-plan-free, web-plan-pro_monthly, web-plan-pro_yearly (highlighted with 'Risparmia 33%' badge), web-plan-lifetime. Coupon flow: WELCOME20 entered in web-coupon-input, click web-coupon-apply -> coupon-applied banner shows '20% di sconto applicato'. Pro Mensile price updates from €9.99 to €7.99/mese. Click web-choose-pro_monthly while NOT logged in -> navigates to /register?next=... ✓. All plans visible on mobile 390x844 (stacked vertically). Backend GET /api/billing/coupons/check?code=WELCOME20 returns 200.
+
+  - task: "Marketing privacy & terms pages"
+    implemented: true
+    working: true
+    file: "frontend/app/(marketing)/privacy.tsx, terms.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: |
+          PRIVACY: testID privacy-page visible. IT body contains 'Privacy Policy', 'Titolare del Trattamento', 'GDPR', 'Stripe', 'bcrypt', 'privacy@codemaster.app'. EN body contains 'Data Controller', 'Stripe', 'bcrypt'. ✓
+          TERMS: testID terms-page visible. IT source confirmed (grep) contains 'Pro Mensile: €9.99/mese', '5. Diritto di Recesso (consumatori UE)', '7. Programma Affiliati'. EN body contains 'Pro Monthly', '9.99', 'Right of withdrawal', 'Affiliate program'. ✓
+
+  - task: "Marketing FAQ page"
+    implemented: true
+    working: true
+    file: "frontend/app/(marketing)/faq.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED. testID faq-page visible. 12 collapsible Q&A items render (count=12). Click on first question expands answer (page text length grew 748 -> 935). Expand/collapse interaction works."
+
+  - task: "Marketing support & contact pages"
+    implemented: true
+    working: true
+    file: "frontend/app/(marketing)/support.tsx, contact.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: |
+          SUPPORT: testID support-page visible, support-email-btn present with 'support@codemaster.app'. ✓
+          CONTACT: testID contact-page visible. Filled name/email/subject/message and clicked contact-submit -> POST /api/contact returned 200, contact-success banner appeared with success message ('Messaggio inviato!' / 'Message sent!' depending on lang). Email provider is MOCKED (logged to backend, no real email sent). Mobile form usable with all fields accessible.
+
+  - task: "Marketing download page"
+    implemented: true
+    working: true
+    file: "frontend/app/(marketing)/download.tsx"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED. testID download-page visible. appstore-btn, playstore-btn, download-web-cta all present."
+
+  - task: "Root URL routing (logged-in vs not logged-in)"
+    implemented: true
+    working: true
+    file: "frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "testing"
+        -comment: |
+          VERIFIED both branches:
+          - NOT LOGGED IN: visiting / on web auto-redirects to /(marketing) and shows landing-page. NO old splash with 'rocket' visible. ✓
+          - LOGGED IN as demo: visiting / auto-redirects to /(tabs)/home (URL becomes /home). landing-page count=0 (not shown). ✓
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 4
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Stripe checkout end-to-end (Pro Monthly, Pro Yearly, Lifetime)"
-    - "Coupon validation + discount application"
-    - "Referral commission on successful payment"
-    - "Stripe webhook idempotency"
-    - "Premium unlock after paid status"
-    - "Admin revenue tracking (/analytics/retention + /transactions)"
+    - "Marketing website (landing, pricing-web, privacy, terms, faq, support, contact, download)"
+    - "Root URL routing (logged-in vs not logged-in)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -564,3 +653,38 @@ agent_communication:
       WEBHOOK IDEMPOTENCY (item 4 in original test plan): Could not be tested with a real Stripe-signed event (we don't have the signing secret). The bad-signature 400 path is verified. Logical idempotency in handle_stripe_webhook_request is implemented correctly via the txn.payment_status != "paid" check in billing.py:308–330 (manual code review).
 
       OVERALL: Backend is production-ready for Stripe checkout creation, transaction persistence, admin analytics, premium upgrades, and referral linking. The single 502 is an upstream proxy issue, not a backend bug.
+
+    -agent: "testing"
+    -message: |
+      MARKETING WEBSITE TEST RUN COMPLETE — Desktop 1280x800 + Mobile 390x844. ALL FUNCTIONAL CHECKS PASS (71 checks, 0 real bugs).
+
+      DESKTOP (1280x800):
+      ✓ Landing /(marketing): testIDs landing-page, web-header, header-logo, lang-it, lang-en, header-signup, hero-cta-primary, hero-cta-secondary, web-footer all present. IT hero title 'Diventa sviluppatore con il tuo tutor AI personale' visible. Code mockup with 'def greet(name)' Python rendered.
+      ✓ Lang switch IT->EN: hero changes to 'Become a developer with your personal AI tutor'; reverts to IT on click.
+      ✓ hero-cta-primary -> /register; hero-cta-secondary -> /pricing-web ✓
+      ✓ Pricing-web: 4 plans (free, pro_monthly, pro_yearly, lifetime). Coupon WELCOME20 -> coupon-applied banner '20% di sconto applicato', Pro Mensile updates to €7.99/mese. web-choose-pro_monthly (logged out) -> /register?next=... ✓
+      ✓ Privacy: privacy-page, IT contains Titolare del Trattamento/GDPR/Stripe/bcrypt/privacy@codemaster.app; EN contains Data Controller/Stripe/bcrypt.
+      ✓ Terms: terms-page; EN contains Pro Monthly/9.99/Right of withdrawal/Affiliate program. IT source verified via grep contains 'Pro Mensile: €9.99/mese', 'Diritto di Recesso', 'Programma Affiliati'.
+      ✓ FAQ: 12 collapsible Q&A items, expand/collapse works.
+      ✓ Support: support-page, support-email-btn (support@codemaster.app).
+      ✓ Contact: filled form, POST /api/contact -> 200, contact-success banner shown. Backend logs '[EMAIL MOCK] to=testweb@example.com'. Email provider is MOCKED.
+      ✓ Download: download-page with appstore-btn, playstore-btn, download-web-cta.
+      ✓ Footer: Privacy link navigates to /privacy.
+
+      MOBILE (390x844):
+      ✓ Landing renders, layout stacks vertically with full-width CTAs.
+      ✓ Pricing 4 plans stacked vertically, all testIDs present.
+      ✓ Contact form usable with all fields accessible.
+
+      ROOT URL ROUTING (TEST 14):
+      ✓ NOT logged in: / -> /(marketing) landing; NO old splash with rocket.
+      ✓ Logged in as demo: / -> /home (tabs); landing-page count=0.
+
+      NETWORK: No 4xx/5xx errors observed on marketing flow. /api/contact, /api/billing/coupons/check, /api/plans all 200.
+
+      MINOR NOTES (NOT bugs):
+      - Console shows 'shadow*' deprecation warnings (per request, ignored).
+      - 'sparkles' icon name warning in MaterialCommunityIcons (cosmetic — badge still renders text, no broken layout).
+      - Marketing language preference persists in localStorage across pages (working as designed).
+
+      NO REAL BUGS FOUND. Marketing website is production-ready.
