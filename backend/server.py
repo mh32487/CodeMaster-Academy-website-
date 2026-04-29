@@ -40,6 +40,7 @@ from legal import router as legal_router
 from email_service import router as email_router, send_email
 from push_service import router as push_router, send_push
 from affiliate import router as affiliate_router
+from contact import router as contact_router
 from seed_data import (
     LANGUAGES,
     LEVELS,
@@ -1096,6 +1097,7 @@ app.include_router(legal_router)
 app.include_router(email_router)
 app.include_router(push_router)
 app.include_router(affiliate_router)
+app.include_router(contact_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

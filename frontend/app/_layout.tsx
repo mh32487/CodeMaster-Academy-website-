@@ -13,6 +13,7 @@ export default function RootLayout() {
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#F8FAFC' } }}>
             <Stack.Screen name="index" />
+            <Stack.Screen name="(marketing)" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="language/[id]" options={{ headerShown: true, title: '' }} />
