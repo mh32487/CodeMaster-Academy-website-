@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { useAuth } from '../../src/AuthContext';
 import { colors, radii, spacing } from '../../src/theme';
 import { PrimaryButton } from '../../src/components';
 import { t } from '../../src/i18n';
+import { notify } from '../../src/notify';
 
 export default function Login() {
   const router = useRouter();
@@ -14,23 +15,35 @@ export default function Login() {
   const [email, setEmail] = useState('demo@codemaster.app');
   const [password, setPassword] = useState('Demo123!');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const onSubmit = async () => {
+    setError('');
     if (!email || !password) {
-      Alert.alert('Errore', 'Compila email e password');
+      setError(lang === 'it' ? 'Compila email e password' : 'Please enter email and password');
       return;
     }
     setLoading(true);
     try {
       const res = await login(email.trim(), password);
       if (res?.requires_otp && res.challenge_id) {
-        // Navigate to OTP screen
         router.push(`/(auth)/verify-otp?challenge_id=${res.challenge_id}&hint=${encodeURIComponent(res.email_hint || email)}` as any);
         return;
       }
       router.replace('/(tabs)/home');
     } catch (e: any) {
-      Alert.alert('Login fallito', e?.response?.data?.detail || 'Credenziali non valide');
+      console.error('[login] error', e);
+      let msg = '';
+      const detail = e?.response?.data?.detail;
+      const status = e?.response?.status;
+      if (typeof detail === 'string') msg = detail;
+      else if (Array.isArray(detail)) msg = detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+      else if (status === 429) msg = lang === 'it' ? 'Troppi tentativi. Riprova tra 15 minuti.' : 'Too many attempts. Try again in 15 minutes.';
+      else if (status === 401) msg = lang === 'it' ? 'Email o password non corretti' : 'Invalid email or password';
+      else if (e?.message && /Network Error|timeout/i.test(e.message)) msg = lang === 'it' ? '⚠️ Impossibile contattare il server.' : '⚠️ Unable to reach server.';
+      else msg = e?.message || (lang === 'it' ? 'Errore sconosciuto' : 'Unknown error');
+      setError(msg);
+      notify(lang === 'it' ? 'Login fallito' : 'Login failed', msg);
     } finally {
       setLoading(false);
     }
@@ -70,6 +83,13 @@ export default function Login() {
               placeholderTextColor={colors.text.tertiary}
             />
           </View>
+
+          {!!error && (
+            <View style={styles.errorBox} testID="login-error">
+              <MaterialCommunityIcons name="alert-circle" size={18} color="#EF4444" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
 
           <PrimaryButton label={t('login', lang)} onPress={onSubmit} loading={loading} testID="login-submit" style={{ marginTop: 24 }} />
 
@@ -113,6 +133,8 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: colors.text.secondary },
   link: { color: colors.primary.blue, fontWeight: '700' },
+  errorBox: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, padding: 12, borderRadius: radii.md, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FCA5A5' },
+  errorText: { flex: 1, color: '#B91C1C', fontSize: 14, fontWeight: '600' },
   demoBox: { marginTop: 32, padding: 16, backgroundColor: colors.primary.blue + '10', borderRadius: radii.md, borderWidth: 1, borderColor: colors.primary.blue + '30' },
   demoTitle: { fontWeight: '700', color: colors.primary.blueDark, marginBottom: 6 },
   demoText: { fontSize: 13, color: colors.text.secondary, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
