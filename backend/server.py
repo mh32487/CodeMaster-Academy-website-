@@ -128,7 +128,7 @@ def clean_doc(d: dict) -> dict:
 # ---------------------------------------------------------------------------
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=1)
     name: str = Field(min_length=1, max_length=80)
     language: str = "it"
     referral_code: Optional[str] = None
