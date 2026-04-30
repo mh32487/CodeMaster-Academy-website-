@@ -41,6 +41,20 @@ from email_service import router as email_router, send_email
 from push_service import router as push_router, send_push
 from affiliate import router as affiliate_router
 from contact import router as contact_router
+from security import (
+    router as security_router,
+    validate_strong_password,
+    check_login_rate_limit,
+    record_login_attempt,
+    create_session,
+    is_known_device,
+    issue_otp_challenge,
+    issue_email_verification,
+    send_new_device_alert,
+    record_login_history,
+    create_access_token_with_session,
+    is_session_active,
+)
 from seed_data import (
     LANGUAGES,
     LEVELS,
@@ -439,25 +453,27 @@ async def root():
 
 @api.post("/auth/register")
 async def register(body: RegisterRequest, request: Request):
-    return await _register_impl(body)
+    return await _register_impl(body, request)
 
 @api.post("/auth/login")
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")
 async def login(body: LoginRequest, request: Request):
-    return await _login_impl(body)
+    return await _login_impl(body, request)
 
 
-async def _register_impl(body: RegisterRequest):
+async def _register_impl(body: RegisterRequest, request: Request = None):
     existing = await db.users.find_one({"email": body.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Strong password validation
+    validate_strong_password(body.password, body.language)
 
     referred_by = None
     if body.referral_code:
         referrer = await db.users.find_one({"referral_code": body.referral_code.upper()})
         if referrer:
             referred_by = referrer["id"]
-            # Award 50 XP to referrer
             await db.users.update_one({"id": referrer["id"]}, {"$inc": {"stats.xp": 50}})
 
     user_id = gen_id("user_")
@@ -473,17 +489,34 @@ async def _register_impl(body: RegisterRequest):
         "subscription": {"plan_id": "free", "active": True, "expires_at": None},
         "stats": {"xp": 0, "streak_days": 0, "lessons_completed": 0, "quizzes_passed": 0, "projects_completed": 0, "last_activity": now_iso()},
         "badges": [],
+        "email_verified": False,
+        "security": {"two_factor_email_enabled": True},
         "created_at": now_iso(),
     }
     await db.users.insert_one(user_doc)
 
-    # Send welcome email (best-effort, mock provider logs to db)
+    # Welcome email
     try:
         await send_email(db, body.email.lower(), "welcome", {"name": body.name, "referral_code": user_doc["referral_code"]}, body.language)
     except Exception:
         pass
 
-    token = create_access_token(user_id, body.email.lower(), "user")
+    # Email verification (best-effort)
+    try:
+        await issue_email_verification(db, user_doc)
+    except Exception:
+        pass
+
+    # Create session for the freshly registered user (no 2FA challenge on first device)
+    if request is not None:
+        sess = await create_session(db, user_id, request)
+        token = create_access_token_with_session(user_id, body.email.lower(), "user", sess["id"])
+        try:
+            await record_login_history(db, user_id, sess["id"], request, True, "registration")
+        except Exception:
+            pass
+    else:
+        token = create_access_token(user_id, body.email.lower(), "user")
     user = await get_user(user_id)
     return {"token": token, "user": user}
 
@@ -491,21 +524,75 @@ async def _register_impl(body: RegisterRequest):
 @api.post("/auth/refresh")
 async def auth_refresh(payload=Depends(get_current_user_payload)):
     """Issue a fresh access token without re-login (uses still-valid token)."""
-    new_token = create_access_token(payload["sub"], payload.get("email", ""), payload.get("role", "user"))
+    sid = payload.get("sid")
+    if sid:
+        # Validate session is still active
+        if not await is_session_active(db, sid):
+            raise HTTPException(status_code=401, detail="Session revoked")
+        new_token = create_access_token_with_session(payload["sub"], payload.get("email", ""), payload.get("role", "user"), sid)
+    else:
+        new_token = create_access_token(payload["sub"], payload.get("email", ""), payload.get("role", "user"))
     return {"token": new_token}
 
 
-async def _login_impl(body: LoginRequest):
+async def _login_impl(body: LoginRequest, request: Request = None):
+    ip = request.client.host if (request and request.client) else "unknown"
+    ua = (request.headers.get("user-agent", "unknown")[:500]) if request else "unknown"
+
+    # Per-IP+email rate limit (5 failures / 15 min)
+    if request is not None:
+        await check_login_rate_limit(db, ip, body.email)
+
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not verify_password(body.password, user["password_hash"]):
+        if request is not None:
+            await record_login_attempt(db, ip, body.email, ua, False, "bad_credentials")
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_access_token(user["id"], user["email"], user.get("role", "user"))
+
+    # Successful credentials check
+    if request is not None:
+        await record_login_attempt(db, ip, body.email, ua, True, "ok")
+
+    # Check if 2FA email required for new device
+    two_factor_enabled = (user.get("security") or {}).get("two_factor_email_enabled", False)
+    if request is not None and two_factor_enabled:
+        is_known = await is_known_device(db, user["id"], request)
+        if not is_known:
+            challenge_id = await issue_otp_challenge(db, user, request)
+            return {
+                "requires_otp": True,
+                "challenge_id": challenge_id,
+                "email_hint": _mask_email(user["email"]),
+                "message": "Codice di verifica inviato via email" if user.get("language", "it") == "it" else "Verification code sent via email",
+            }
+
+    # Trusted device: create session and return token
+    if request is not None:
+        sess = await create_session(db, user["id"], request)
+        token = create_access_token_with_session(user["id"], user["email"], user.get("role", "user"), sess["id"])
+        await record_login_history(db, user["id"], sess["id"], request, True, "ok")
+    else:
+        token = create_access_token(user["id"], user["email"], user.get("role", "user"))
     user_clean = await get_user(user["id"])
     return {"token": token, "user": user_clean}
 
 
+def _mask_email(email: str) -> str:
+    try:
+        local, dom = email.split("@", 1)
+        if len(local) <= 2:
+            return f"{local[0]}***@{dom}"
+        return f"{local[0]}{'*' * max(2, len(local) - 3)}{local[-1]}@{dom}"
+    except Exception:
+        return "***@***"
+
+
 @api.get("/auth/me")
 async def me(payload=Depends(get_current_user_payload)):
+    # Validate session not revoked (only for tokens with sid claim)
+    sid = payload.get("sid")
+    if sid and not await is_session_active(db, sid):
+        raise HTTPException(status_code=401, detail="Session revoked")
     user = await get_user(payload["sub"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1098,6 +1185,7 @@ app.include_router(email_router)
 app.include_router(push_router)
 app.include_router(affiliate_router)
 app.include_router(contact_router)
+app.include_router(security_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

@@ -487,16 +487,92 @@ frontend:
           - NOT LOGGED IN: visiting / on web auto-redirects to /(marketing) and shows landing-page. NO old splash with 'rocket' visible. ✓
           - LOGGED IN as demo: visiting / auto-redirects to /(tabs)/home (URL becomes /home). landing-page count=0 (not shown). ✓
 
+  - task: "Security/Auth hardening module (/api/auth/*)"
+    implemented: true
+    working: true
+    file: "backend/security.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New module security.py registering /api/auth/forgot-password, /auth/reset-password, /auth/verify-email, /auth/resend-verification, /auth/verify-otp, /auth/sessions (list+revoke+revoke-all-others), /auth/login-history, /auth/change-password. Adds strong password validation (8+/upper/digit/symbol, Italian messages), per (ip+email) login rate limit (5 failures / 15 min), 2FA email OTP for new devices (new UA fingerprint -> requires_otp challenge), session tracking with sid claim in JWT and revoke-on-password-reset. Integrated into server.py register/login flows."
+        -working: true
+        -agent: "testing"
+        -comment: |
+          COMPREHENSIVE SECURITY MODULE TEST — 36/37 PASSED at http://localhost:8001.
+
+          1) STRONG PASSWORD VALIDATION on /auth/register:
+             - "weakpwdx" (no upper) -> 400 'almeno una maiuscola' ✓
+             - "WeakPwdA" (no digit) -> 400 'almeno un numero' ✓
+             - "WeakPwd1" (no symbol) -> 400 'almeno un simbolo' ✓
+             - "Strong123!" -> 200 {token, user.email_verified:false} ✓
+             - MINOR: "weak" (4 chars, <6) returns 422 from Pydantic validator (RegisterRequest has password: Field(min_length=6)) with English message INSTEAD of 400 Italian from validate_strong_password. The password IS rejected (core security OK), but the error shape differs from spec. Fix: raise RegisterRequest's min_length to 8 OR remove min_length=6 so custom validator handles all <8 cases. Same issue applies to ResetPasswordBody/ChangePasswordBody (Field(min_length=8)) where 4-7 char passwords trigger 422 instead of 400.
+
+          2) FORGOT / RESET PASSWORD:
+             - /auth/forgot-password {demo,it} -> 200 success:true ✓
+             - /auth/forgot-password {unknown,it} -> 200 success:true (anti-enumeration) ✓
+             - db.password_resets grew by 1 (only real user) ✓
+             - db.email_outbox password_reset entry created ✓
+             - /auth/reset-password {token:bogus, new_password:Strong} -> 400 ✓
+             - /auth/reset-password {token:bogus, new_password:weak} -> 400/422 ✓
+
+          3) EMAIL VERIFICATION:
+             - After /auth/register: db.email_verifications +1 ✓, db.email_outbox email_verification +1 ✓
+             - /auth/verify-email {token:bogus} -> 400 ✓
+
+          4) 2FA OTP FOR NEW DEVICE:
+             - Registered otp_<ts>@x.com with UA "Test/1.0" ✓
+             - Login same email+pwd with UA "TestBot/2.0" -> {requires_otp:true, challenge_id, email_hint:o****@x.com, message:"Codice di verifica inviato via email"} ✓
+             - db.auth_otps has entry for challenge_id ✓
+             - /auth/verify-otp {challenge_id, code:"000000"} -> 400 'Codice non valido o scaduto' ✓
+             - Login again with original UA "Test/1.0" -> token directly, NO requires_otp ✓ (device_hash matches existing session)
+
+          5) SESSIONS MANAGEMENT (login demo):
+             - GET /auth/sessions -> 200 array with is_current=true, ip, device_label ✓
+             - POST /auth/sessions/nonexistent/revoke -> 404 ✓
+             - POST /auth/sessions/revoke-all-others -> 200 {success:true, revoked_count:N} ✓
+             - After revoke-all-others, 2nd token's /auth/me -> 401 'Session revoked' ✓
+             - POST /auth/sessions/{second_sid}/revoke (specific) -> 200 ✓
+             - Revoked token's /auth/me -> 401 'Session revoked' ✓
+
+          6) LOGIN HISTORY:
+             - GET /auth/login-history -> 200 array (6+ entries) with all required keys {device_label, ip, success, reason, created_at} ✓
+
+          7) RATE LIMIT:
+             - 6 consecutive WRONG logins for same (ip,email) -> [401,401,401,401,401,429] with "Troppi tentativi" IT message on 6th ✓
+
+          8) CHANGE PASSWORD (demo):
+             - Wrong current_password -> 400 'Password attuale non corretta' ✓
+             - Weak new_password -> 400/422 ✓ (demo pwd NOT actually changed; left Demo123! intact)
+
+          9) REGRESSION — existing users login (no OTP):
+             - demo@codemaster.app/Demo123! -> 200 token directly (no requires_otp) ✓ (demo user has no security.two_factor_email_enabled set)
+             - admin@codemaster.app/Admin123! -> 200 token directly ✓
+             - /auth/me with both tokens -> 200 ✓
+
+          10) REGRESSION — other endpoints:
+             - GET /api/languages -> 17 ✓
+             - GET /api/missions/today (auth) -> 200 ✓
+             - GET /api/affiliate/me/summary (auth) -> 200 ✓
+
+          Notes:
+          - Fresh registered users get security.two_factor_email_enabled=true in server.py _register_impl (line 493), while demo/admin (seeded) do NOT have it, so demo/admin login skips OTP path. This matches the spec.
+          - device_hash uses UA only (IP excluded) — intentional to tolerate IP roaming; UA-based isolation of "new device" is working correctly.
+          - Email provider is MOCKED (logged to db.email_outbox). All template entries correctly created: password_reset, email_verification, login_otp, welcome, new_device_alert.
+
+          NO CRITICAL BUGS. Only minor: Pydantic min_length validators on RegisterRequest/ResetPasswordBody/ChangePasswordBody intercept very-short passwords with 422 (English) before custom validate_strong_password (400 Italian) can run.
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Marketing website (landing, pricing-web, privacy, terms, faq, support, contact, download)"
-    - "Root URL routing (logged-in vs not logged-in)"
+    - "Security/Auth hardening module (/api/auth/*)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -688,3 +764,28 @@ agent_communication:
       - Marketing language preference persists in localStorage across pages (working as designed).
 
       NO REAL BUGS FOUND. Marketing website is production-ready.
+
+    -agent: "testing"
+    -message: |
+      SECURITY/AUTH HARDENING MODULE TESTED — 36/37 assertions PASSED at http://localhost:8001.
+
+      SUMMARY PER PRIORITY 1 ITEM:
+      1) Strong password validation ✅ (4 of 5 checks pass; see minor below)
+      2) Forgot/reset password ✅ — anti-enumeration works, db.password_resets + db.email_outbox entries created, bogus token -> 400
+      3) Email verification side-effect ✅ — db.email_verifications + db.email_outbox entries created on register, bogus verify -> 400
+      4) 2FA OTP for new device ✅ — different UA triggers requires_otp with challenge_id+email_hint, auth_otps persisted, bogus code -> 400, same UA bypasses OTP
+      5) Sessions management ✅ — GET /sessions, revoke specific, revoke nonexistent 404, revoke-all-others, /auth/me returns 401 'Session revoked' for revoked tokens
+      6) Login history ✅ — array with device_label/ip/success/reason/created_at
+      7) Rate limit ✅ — 6th failed login for same (ip,email) returns 429 'Troppi tentativi'
+      8) Change password ✅ — wrong current -> 400; weak new -> 400/422
+      9) Regression demo+admin login ✅ — token returned directly, no requires_otp, /auth/me 200
+      10) Regression /api/languages, /missions/today, /affiliate/me/summary ✅ — all 200
+
+      MINOR (not a critical bug):
+      - In server.py, RegisterRequest declares `password: str = Field(min_length=6)`. When a <6-char password is sent (e.g. "weak"), Pydantic's 422 English error fires BEFORE the custom validate_strong_password (400 IT 'almeno 8 caratteri'). Password still rejected — security intact. For strict spec compliance, either:
+         a) Remove min_length=6 from RegisterRequest (let validate_strong_password handle all cases), or
+         b) Bump min_length=6 to min_length=8
+      - Same minor applies to ResetPasswordBody and ChangePasswordBody (Field(min_length=8)) when new_password is <8 chars: Pydantic 422 fires instead of 400 IT. Accepted as OK per spec ("either OK").
+
+      NO CRITICAL ISSUES. NO BACKEND CODE CHANGES MADE. demo@codemaster.app / Demo123! password NOT modified.
+      Email provider remains MOCKED (db.email_outbox).

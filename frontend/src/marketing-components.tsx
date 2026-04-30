@@ -50,14 +50,14 @@ export function WebHeader({ lang, setLang }: { lang: MktLang; setLang: (l: MktLa
             </TouchableOpacity>
           ) : (
             <>
+              <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.btnLogin} testID="header-login">
+                <Text style={styles.btnLoginText}>{mt('nav_login', lang)}</Text>
+              </TouchableOpacity>
               {!isMobile && (
-                <TouchableOpacity onPress={() => router.push('/(auth)/login')} testID="header-login">
-                  <Text style={styles.navText}>{mt('nav_login', lang)}</Text>
+                <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={styles.btnPrimary} testID="header-signup">
+                  <Text style={styles.btnPrimaryText}>{mt('nav_signup', lang)}</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={styles.btnPrimary} testID="header-signup">
-                <Text style={styles.btnPrimaryText}>{mt('nav_signup', lang)}</Text>
-              </TouchableOpacity>
             </>
           )}
         </View>
@@ -250,6 +250,8 @@ const styles = StyleSheet.create({
   headerCta: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   btnPrimary: { backgroundColor: colors.primary.blue, paddingHorizontal: 18, paddingVertical: 10, borderRadius: radii.pill },
   btnPrimaryText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
+  btnLogin: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.pill, borderWidth: 2, borderColor: colors.primary.blue },
+  btnLoginText: { color: colors.primary.blue, fontWeight: '700', fontSize: 14 },
   langSwitch: { flexDirection: 'row', backgroundColor: colors.bg.main, borderRadius: radii.pill, padding: 2 },
   langChip: { paddingHorizontal: 8, paddingVertical: 6, borderRadius: radii.pill },
   langChipActive: { backgroundColor: '#FFF' },

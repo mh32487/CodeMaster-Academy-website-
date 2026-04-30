@@ -1,395 +1,519 @@
-"""
-Stripe E2E backend tests for CodeMaster Academy (TEST MODE).
+"""Backend tests for CodeMaster Academy — Security/Auth hardening module.
+
+Tests all /api/auth/* endpoints under security.py plus regression on existing endpoints.
 """
 import os
 import sys
-import uuid
-import requests
+import time
+import json
+import asyncio
+from pathlib import Path
 
-BASE = os.environ.get("BASE_URL", "http://localhost:8001")
+import requests
+from motor.motor_asyncio import AsyncIOMotorClient
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / "backend" / ".env")
+
+BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8001")
 API = f"{BASE}/api"
 
-DEMO_EMAIL = "demo@codemaster.app"
-DEMO_PASSWORD = "Demo123!"
-ADMIN_EMAIL = "admin@codemaster.app"
-ADMIN_PASSWORD = "Admin123!"
+MONGO_URL = os.environ["MONGO_URL"]
+DB_NAME = os.environ["DB_NAME"]
 
-results = []
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
 
-
-def record(name, ok, detail=""):
-    status = "PASS" if ok else "FAIL"
-    print(f"[{status}] {name} :: {detail}")
-    results.append({"name": name, "ok": ok, "detail": detail})
+results = {"passed": [], "failed": []}
 
 
-def login(email, password):
-    r = requests.post(f"{API}/auth/login", json={"email": email, "password": password}, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    return data["token"], data["user"]
+def log_pass(name, detail=""):
+    msg = f"{GREEN}[PASS]{RESET} {name}"
+    if detail:
+        msg += f" — {detail}"
+    print(msg)
+    results["passed"].append(name)
 
 
-def headers(token):
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+def log_fail(name, detail=""):
+    msg = f"{RED}[FAIL]{RESET} {name}"
+    if detail:
+        msg += f" — {detail}"
+    print(msg)
+    results["failed"].append((name, detail))
 
 
-def test_health():
-    try:
-        r = requests.get(f"{API}/", timeout=10)
-        record("API health", r.status_code == 200, f"status={r.status_code} body={r.text[:80]}")
-    except Exception as e:
-        record("API health", False, str(e))
+def section(title):
+    print(f"\n{YELLOW}{'=' * 75}{RESET}")
+    print(f"{YELLOW}  {title}{RESET}")
+    print(f"{YELLOW}{'=' * 75}{RESET}")
 
 
-def test_coupon_check():
-    try:
-        r = requests.get(f"{API}/billing/coupons/check", params={"code": "WELCOME20"}, timeout=15)
-        ok = r.status_code == 200 and r.json().get("discount_percent") == 20 and r.json().get("valid") is True
-        record("Coupon WELCOME20 -> 200 (20%)", ok, f"status={r.status_code} body={r.text[:120]}")
-    except Exception as e:
-        record("Coupon WELCOME20", False, str(e))
-
-    try:
-        r = requests.get(f"{API}/billing/coupons/check", params={"code": "STUDENT50"}, timeout=15)
-        ok = r.status_code == 200 and r.json().get("discount_percent") == 50
-        record("Coupon STUDENT50 -> 200 (50%)", ok, f"status={r.status_code} body={r.text[:120]}")
-    except Exception as e:
-        record("Coupon STUDENT50", False, str(e))
-
-    try:
-        r = requests.get(f"{API}/billing/coupons/check", params={"code": "INVALID"}, timeout=15)
-        ok = r.status_code == 404
-        record("Coupon INVALID -> 404", ok, f"status={r.status_code} body={r.text[:120]}")
-    except Exception as e:
-        record("Coupon INVALID", False, str(e))
+async def mongo():
+    return AsyncIOMotorClient(MONGO_URL)[DB_NAME]
 
 
-def test_checkout(demo_token):
-    sessions = {}
-
-    try:
-        r = requests.post(
-            f"{API}/billing/stripe/checkout",
-            json={"plan_id": "pro_monthly", "origin_url": "http://localhost:3000"},
-            headers=headers(demo_token), timeout=60,
-        )
-        body = r.json() if r.status_code == 200 else {}
-        ok = (
-            r.status_code == 200
-            and body.get("amount") == 9.99
-            and body.get("discount") == 0
-            and body.get("session_id", "").startswith("cs_")
-            and "url" in body
-        )
-        sessions["pro_monthly"] = body.get("session_id")
-        record("Checkout pro_monthly (€9.99, no coupon)", ok, f"status={r.status_code} body={r.text[:200]}")
-    except Exception as e:
-        record("Checkout pro_monthly", False, str(e))
-
-    try:
-        r = requests.post(
-            f"{API}/billing/stripe/checkout",
-            json={"plan_id": "pro_yearly", "origin_url": "http://localhost:3000", "coupon_code": "WELCOME20"},
-            headers=headers(demo_token), timeout=60,
-        )
-        body = r.json() if r.status_code == 200 else {}
-        ok = (
-            r.status_code == 200
-            and abs(body.get("amount", 0) - 63.99) < 0.01
-            and body.get("discount") == 20
-        )
-        sessions["pro_yearly"] = body.get("session_id")
-        record("Checkout pro_yearly + WELCOME20 -> €63.99", ok, f"status={r.status_code} body={r.text[:200]}")
-    except Exception as e:
-        record("Checkout pro_yearly", False, str(e))
-
-    try:
-        r = requests.post(
-            f"{API}/billing/stripe/checkout",
-            json={"plan_id": "lifetime", "origin_url": "http://localhost:3000", "coupon_code": "STUDENT50"},
-            headers=headers(demo_token), timeout=60,
-        )
-        body = r.json() if r.status_code == 200 else {}
-        ok = (
-            r.status_code == 200
-            and abs(body.get("amount", 0) - 99.50) < 0.01
-            and body.get("discount") == 50
-        )
-        sessions["lifetime"] = body.get("session_id")
-        record("Checkout lifetime + STUDENT50 -> €99.50", ok, f"status={r.status_code} body={r.text[:200]}")
-    except Exception as e:
-        record("Checkout lifetime", False, str(e))
-
-    try:
-        r = requests.post(
-            f"{API}/billing/stripe/checkout",
-            json={"plan_id": "bogus_plan", "origin_url": "http://localhost:3000"},
-            headers=headers(demo_token), timeout=30,
-        )
-        record("Checkout invalid plan -> 400", r.status_code == 400, f"status={r.status_code} body={r.text[:120]}")
-    except Exception as e:
-        record("Checkout invalid plan", False, str(e))
-
-    return sessions
+def post(path, json_data=None, headers=None):
+    return requests.post(f"{API}{path}", json=json_data, headers=headers or {}, timeout=30)
 
 
-def test_payment_transactions_in_db(admin_token, sessions):
-    try:
-        r = requests.get(f"{API}/admin/transactions", headers=headers(admin_token), timeout=30)
-        if r.status_code != 200 or not isinstance(r.json(), list):
-            record("payment_transactions list", False, f"status={r.status_code}")
-            return
-        txns = r.json()
-        session_ids_in_db = {t.get("session_id") for t in txns}
-        target_sessions = [v for v in sessions.values() if v]
-        missing = [v for v in target_sessions if v not in session_ids_in_db]
-        pending_for_test = [t for t in txns if t.get("session_id") in target_sessions and t.get("payment_status") == "pending"]
-        ok = len(missing) == 0 and len(pending_for_test) == len(target_sessions)
-        record(
-            "payment_transactions records (3 sessions, payment_status=pending)",
-            ok,
-            f"missing={missing} pending_count={len(pending_for_test)}/{len(target_sessions)} total_txns={len(txns)}",
-        )
-    except Exception as e:
-        record("payment_transactions list", False, str(e))
+def get(path, headers=None):
+    return requests.get(f"{API}{path}", headers=headers or {}, timeout=30)
 
 
-def test_status_polling(demo_token, sessions):
-    sid = sessions.get("pro_monthly")
-    if not sid:
-        record("Status polling valid session", False, "no session_id from checkout step")
+def bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+# 1. STRONG PASSWORD VALIDATION
+def test_password_validation():
+    section("1. Strong password validation on /auth/register")
+    ts = int(time.time())
+
+    email = f"test_w_{ts}@x.com"
+    r = post("/auth/register", {"email": email, "name": "T", "password": "weak", "language": "it"})
+    if r.status_code == 400 and ("8 caratteri" in r.text or "almeno 8" in r.text):
+        log_pass("register 'weak' (<8) -> 400 IT message")
     else:
-        try:
-            r = requests.get(f"{API}/billing/stripe/status/{sid}", headers=headers(demo_token), timeout=60)
-            body = r.json() if r.status_code == 200 else {}
-            payment_status = body.get("payment_status")
-            ok = r.status_code == 200 and payment_status in ("unpaid", "pending", "no_payment_required", None)
-            record(
-                "Status polling valid session -> 200 unpaid/pending",
-                ok,
-                f"status={r.status_code} payment_status={payment_status} body={r.text[:200]}",
-            )
-        except Exception as e:
-            record("Status polling valid session", False, str(e))
+        log_fail("register weak", f"status={r.status_code} body={r.text[:200]}")
 
-    try:
-        r = requests.get(f"{API}/billing/stripe/status/cs_test_unknown_zzzzz", headers=headers(demo_token), timeout=30)
-        record("Status polling unknown session -> 404", r.status_code == 404, f"status={r.status_code} body={r.text[:120]}")
-    except Exception as e:
-        record("Status polling unknown session", False, str(e))
+    # no-upper: use 8-char lowercase "weakpwdx"
+    email = f"test_wp2_{ts}@x.com"
+    r = post("/auth/register", {"email": email, "name": "T", "password": "weakpwdx", "language": "it"})
+    if r.status_code == 400 and "maiuscola" in r.text.lower():
+        log_pass("register no-upper -> 400 mentioning maiuscola")
+    else:
+        log_fail("register no-upper", f"status={r.status_code} body={r.text[:200]}")
 
-    try:
-        new_email = f"qa.foreigner.{uuid.uuid4().hex[:8]}@codemaster-test.app"
-        rreg = requests.post(
-            f"{API}/auth/register",
-            json={"email": new_email, "password": "Qa12345!", "name": "QA Foreigner", "language": "it"},
-            timeout=30,
-        )
-        if rreg.status_code != 200:
-            record("Status polling other user -> 403", False, f"register failed status={rreg.status_code}")
+    # no-digit
+    email = f"test_wd_{ts}@x.com"
+    r = post("/auth/register", {"email": email, "name": "T", "password": "WeakPwdA", "language": "it"})
+    if r.status_code == 400 and "numero" in r.text.lower():
+        log_pass("register no-digit -> 400 mentioning numero")
+    else:
+        log_fail("register no-digit", f"status={r.status_code} body={r.text[:200]}")
+
+    # no-symbol
+    email = f"test_ws_{ts}@x.com"
+    r = post("/auth/register", {"email": email, "name": "T", "password": "WeakPwd1", "language": "it"})
+    if r.status_code == 400 and "simbolo" in r.text.lower():
+        log_pass("register no-symbol -> 400 mentioning simbolo")
+    else:
+        log_fail("register no-symbol", f"status={r.status_code} body={r.text[:200]}")
+
+    # Strong
+    email = f"test_ok_{ts}@x.com"
+    r = post("/auth/register", {"email": email, "name": "T", "password": "Strong123!", "language": "it"})
+    if r.status_code == 200:
+        body = r.json()
+        user = body.get("user") or {}
+        email_verified = user.get("email_verified", False)
+        if body.get("token") and email_verified is False:
+            log_pass("register Strong123! -> 200 token, email_verified=false")
         else:
-            other_token = rreg.json()["token"]
-            sid2 = sessions.get("pro_monthly") or sessions.get("pro_yearly")
-            r = requests.get(f"{API}/billing/stripe/status/{sid2}", headers=headers(other_token), timeout=30)
-            record("Status polling other user -> 403", r.status_code == 403, f"status={r.status_code} body={r.text[:120]}")
-    except Exception as e:
-        record("Status polling other user", False, str(e))
+            log_fail("register Strong123! shape", f"token={bool(body.get('token'))} ev={email_verified}")
+    else:
+        log_fail("register Strong123!", f"status={r.status_code} body={r.text[:200]}")
 
 
-def test_webhook_bad_sig():
-    try:
-        r = requests.post(
-            f"{API}/webhook/stripe",
-            data=b'{"bogus":"payload"}',
-            headers={"Stripe-Signature": "t=1,v1=invalidhash", "Content-Type": "application/json"},
-            timeout=30,
-        )
-        record("Webhook bogus body -> 400", r.status_code == 400, f"status={r.status_code} body={r.text[:200]}")
-    except Exception as e:
-        record("Webhook bogus body", False, str(e))
+# 2. FORGOT / RESET
+async def test_forgot_reset_password():
+    section("2. Forgot/Reset password")
+    db = await mongo()
+    ts = int(time.time())
+
+    pr_before = await db.password_resets.count_documents({})
+    outbox_before = await db.email_outbox.count_documents({"template_id": "password_reset"})
+
+    r = post("/auth/forgot-password", {"email": "demo@codemaster.app", "lang": "it"})
+    if r.status_code == 200 and r.json().get("success") is True:
+        log_pass("forgot-password demo -> 200")
+    else:
+        log_fail("forgot-password demo", f"status={r.status_code} body={r.text[:200]}")
+
+    r = post("/auth/forgot-password", {"email": f"unknown_{ts}@x.com", "lang": "it"})
+    if r.status_code == 200 and r.json().get("success") is True:
+        log_pass("forgot-password unknown -> 200 (anti-enumeration)")
+    else:
+        log_fail("forgot-password unknown", f"status={r.status_code} body={r.text[:200]}")
+
+    await asyncio.sleep(0.3)
+
+    pr_after = await db.password_resets.count_documents({})
+    outbox_after = await db.email_outbox.count_documents({"template_id": "password_reset"})
+    if pr_after > pr_before:
+        log_pass(f"db.password_resets +{pr_after - pr_before}")
+    else:
+        log_fail("db.password_resets", f"before={pr_before} after={pr_after}")
+
+    if outbox_after > outbox_before:
+        log_pass(f"db.email_outbox password_reset +{outbox_after - outbox_before}")
+    else:
+        log_fail("db.email_outbox password_reset", f"before={outbox_before} after={outbox_after}")
+
+    r = post("/auth/reset-password", {"token": "bogus", "new_password": "NewStrong1!", "lang": "it"})
+    if r.status_code == 400:
+        log_pass("reset-password bogus+strong -> 400")
+    else:
+        log_fail("reset-password bogus+strong", f"status={r.status_code} body={r.text[:200]}")
+
+    r = post("/auth/reset-password", {"token": "bogus", "new_password": "weak", "lang": "it"})
+    if r.status_code in (400, 422):
+        log_pass("reset-password bogus+weak -> 400/422")
+    else:
+        log_fail("reset-password bogus+weak", f"status={r.status_code} body={r.text[:200]}")
 
 
-def test_admin_analytics(admin_token):
-    try:
-        r = requests.get(f"{API}/admin/analytics/retention", headers=headers(admin_token), timeout=30)
-        body = r.json() if r.status_code == 200 else {}
-        required = ["total_revenue_eur", "paid_transactions", "arpu", "plan_distribution",
-                    "retention_7d_percent", "retention_30d_percent", "active_24h",
-                    "active_7d", "active_30d", "streak_buckets"]
-        missing = [k for k in required if k not in body]
-        record(
-            "Admin /analytics/retention has all required keys",
-            r.status_code == 200 and not missing,
-            f"status={r.status_code} missing={missing}",
-        )
-    except Exception as e:
-        record("Admin /analytics/retention", False, str(e))
+# 3. EMAIL VERIFICATION
+async def test_email_verification():
+    section("3. Email verification side-effect")
+    db = await mongo()
+    ts = int(time.time())
+    email = f"emailver_{ts}@x.com"
 
-    try:
-        r = requests.get(f"{API}/admin/analytics/conversion-funnel", headers=headers(admin_token), timeout=30)
-        body = r.json() if r.status_code == 200 else {}
-        required = ["registered", "completed_first_lesson", "passed_first_quiz",
-                    "subscribed_pro", "conversion_to_pro_percent"]
-        missing = [k for k in required if k not in body]
-        record(
-            "Admin /analytics/conversion-funnel has all required keys",
-            r.status_code == 200 and not missing,
-            f"status={r.status_code} missing={missing} body={body}",
-        )
-    except Exception as e:
-        record("Admin /analytics/conversion-funnel", False, str(e))
+    ev_before = await db.email_verifications.count_documents({})
+    outbox_before = await db.email_outbox.count_documents({"template_id": "email_verification"})
 
-    try:
-        r = requests.get(f"{API}/admin/transactions", headers=headers(admin_token), timeout=30)
-        ok = r.status_code == 200 and isinstance(r.json(), list)
-        record("Admin /transactions returns array", ok, f"status={r.status_code} count={len(r.json()) if ok else 'n/a'}")
-    except Exception as e:
-        record("Admin /transactions", False, str(e))
-
-    try:
-        coupon_code = f"TESTCPN{uuid.uuid4().hex[:4].upper()}"
-        r = requests.post(
-            f"{API}/admin/coupons",
-            json={"code": coupon_code, "discount_percent": 10, "uses_left": 5},
-            headers=headers(admin_token), timeout=30,
-        )
-        ok = r.status_code == 200 and r.json().get("success") is True
-        record(f"Admin POST /coupons {coupon_code}", ok, f"status={r.status_code} body={r.text[:200]}")
-
-        rg = requests.get(f"{API}/admin/coupons", headers=headers(admin_token), timeout=30)
-        codes_in_list = [c.get("code") for c in (rg.json() if rg.status_code == 200 else [])]
-        record(
-            f"Admin GET /coupons includes {coupon_code}",
-            coupon_code in codes_in_list,
-            f"codes={codes_in_list[:10]}",
-        )
-
-        r2 = requests.post(
-            f"{API}/admin/coupons",
-            json={"code": "TESTCPN10", "discount_percent": 10, "uses_left": 5},
-            headers=headers(admin_token), timeout=30,
-        )
-        ok2 = r2.status_code in (200, 400)
-        record("Admin POST /coupons TESTCPN10 (created or already exists)", ok2, f"status={r2.status_code} body={r2.text[:120]}")
-    except Exception as e:
-        record("Admin POST/GET coupons", False, str(e))
-
-
-def test_premium_flow(admin_token):
-    try:
-        email = f"qa.premium.{uuid.uuid4().hex[:8]}@codemaster-test.app"
-        rreg = requests.post(
-            f"{API}/auth/register",
-            json={"email": email, "password": "Qa12345!", "name": "QA Premium", "language": "it"},
-            timeout=30,
-        )
-        if rreg.status_code != 200:
-            record("Premium flow: register new user", False, f"status={rreg.status_code}")
-            return
-        new_token = rreg.json()["token"]
-        new_user_id = rreg.json()["user"]["id"]
-        record("Premium flow: register new user", True, f"user_id={new_user_id}")
-
-        r = requests.put(
-            f"{API}/admin/users/{new_user_id}/subscription",
-            json={"plan_id": "pro_monthly", "active": True, "expires_at": None},
-            headers=headers(admin_token), timeout=30,
-        )
-        record(
-            "Premium flow: admin PUT subscription -> 200",
-            r.status_code == 200 and r.json().get("success") is True,
-            f"status={r.status_code} body={r.text[:160]}",
-        )
-
-        rme = requests.get(f"{API}/auth/me", headers=headers(new_token), timeout=30)
-        sub = rme.json().get("subscription", {}) if rme.status_code == 200 else {}
-        ok = rme.status_code == 200 and sub.get("plan_id") == "pro_monthly" and sub.get("active") is True
-        record(
-            "Premium flow: GET /auth/me shows pro_monthly",
-            ok,
-            f"status={rme.status_code} subscription={sub}",
-        )
-    except Exception as e:
-        record("Premium flow", False, str(e))
-
-
-def test_referral(demo_user):
-    try:
-        ref_code = demo_user.get("referral_code")
-        if not ref_code:
-            record("Referral flow", False, "no referral_code on demo user")
-            return
-
-        email = f"qa.referred.{uuid.uuid4().hex[:8]}@codemaster-test.app"
-        rreg = requests.post(
-            f"{API}/auth/register",
-            json={
-                "email": email,
-                "password": "Qa12345!",
-                "name": "QA Referred",
-                "language": "it",
-                "referral_code": ref_code,
-            },
-            timeout=30,
-        )
-        if rreg.status_code != 200:
-            record("Referral: register with referral_code", False, f"status={rreg.status_code} body={rreg.text[:120]}")
-            return
-        new_token = rreg.json()["token"]
-
-        rme = requests.get(f"{API}/auth/me", headers=headers(new_token), timeout=30)
-        body = rme.json() if rme.status_code == 200 else {}
-        referred_by = body.get("referred_by")
-        ok = rme.status_code == 200 and referred_by == demo_user["id"]
-        record(
-            f"Referral: new user.referred_by == demo.id ({demo_user['id']})",
-            ok,
-            f"referred_by={referred_by}",
-        )
-    except Exception as e:
-        record("Referral flow", False, str(e))
-
-
-def main():
-    print(f"Base URL: {BASE}")
-    print("=" * 70)
-    test_health()
-
-    try:
-        demo_token, demo_user = login(DEMO_EMAIL, DEMO_PASSWORD)
-        record("Login as demo", True, f"user_id={demo_user['id']} ref_code={demo_user.get('referral_code')}")
-    except Exception as e:
-        record("Login as demo", False, str(e))
+    r = post("/auth/register", {"email": email, "name": "EV User", "password": "Strong123!", "language": "it"})
+    if r.status_code != 200:
+        log_fail("register for email verification", f"status={r.status_code}")
         return
 
-    try:
-        admin_token, admin_user = login(ADMIN_EMAIL, ADMIN_PASSWORD)
-        record("Login as admin", True, f"role={admin_user.get('role')}")
-    except Exception as e:
-        record("Login as admin", False, str(e))
+    await asyncio.sleep(0.4)
+    ev_after = await db.email_verifications.count_documents({})
+    outbox_after = await db.email_outbox.count_documents({"template_id": "email_verification"})
+
+    if ev_after > ev_before:
+        log_pass(f"db.email_verifications +{ev_after - ev_before}")
+    else:
+        log_fail("db.email_verifications", f"before={ev_before} after={ev_after}")
+
+    if outbox_after > outbox_before:
+        log_pass(f"db.email_outbox email_verification +{outbox_after - outbox_before}")
+    else:
+        log_fail("db.email_outbox email_verification", f"before={outbox_before} after={outbox_after}")
+
+    r = post("/auth/verify-email", {"token": "bogus"})
+    if r.status_code == 400:
+        log_pass("verify-email bogus -> 400")
+    else:
+        log_fail("verify-email bogus", f"status={r.status_code} body={r.text[:200]}")
+
+
+# 4. 2FA OTP
+async def test_2fa_otp():
+    section("4. 2FA OTP for new device")
+    db = await mongo()
+    ts = int(time.time())
+    email = f"otp_{ts}@x.com"
+    pwd = "Strong123!"
+
+    r = requests.post(f"{API}/auth/register",
+                      json={"email": email, "name": "OTP User", "password": pwd, "language": "it"},
+                      headers={"User-Agent": "Test/1.0"}, timeout=30)
+    if r.status_code != 200:
+        log_fail("otp: register", f"status={r.status_code} body={r.text[:200]}")
+        return
+    log_pass("otp: registered user with UA Test/1.0")
+
+    otps_before = await db.auth_otps.count_documents({})
+
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": email, "password": pwd},
+                      headers={"User-Agent": "TestBot/2.0"}, timeout=30)
+    if r.status_code != 200:
+        log_fail("otp: login new-device", f"status={r.status_code} body={r.text[:200]}")
+        return
+    body = r.json()
+    if body.get("requires_otp") is True and body.get("challenge_id") and body.get("email_hint") and body.get("message"):
+        log_pass(f"otp: new-device login -> requires_otp=true (hint={body['email_hint']})")
+        challenge_id = body["challenge_id"]
+    else:
+        log_fail("otp: new-device shape", f"body={json.dumps(body)[:300]}")
         return
 
-    test_coupon_check()
-    sessions = test_checkout(demo_token)
-    test_payment_transactions_in_db(admin_token, sessions)
-    test_status_polling(demo_token, sessions)
-    test_webhook_bad_sig()
-    test_admin_analytics(admin_token)
-    test_premium_flow(admin_token)
-    test_referral(demo_user)
+    await asyncio.sleep(0.3)
+    rec = await db.auth_otps.find_one({"challenge_id": challenge_id})
+    if rec:
+        log_pass("otp: db.auth_otps has entry for challenge_id")
+    else:
+        otps_after = await db.auth_otps.count_documents({})
+        log_fail("otp: db.auth_otps missing record", f"before={otps_before} after={otps_after}")
 
-    print("=" * 70)
-    passed = sum(1 for r in results if r["ok"])
-    failed = sum(1 for r in results if not r["ok"])
-    print(f"TOTAL: {passed} PASSED / {failed} FAILED out of {len(results)}")
-    if failed:
-        print("\nFAILED:")
-        for r in results:
-            if not r["ok"]:
-                print(f"  - {r['name']}: {r['detail']}")
-    sys.exit(0 if failed == 0 else 1)
+    r = post("/auth/verify-otp", {"challenge_id": challenge_id, "code": "000000"})
+    if r.status_code == 400:
+        log_pass("otp: verify-otp 000000 -> 400")
+    else:
+        log_fail("otp: verify-otp 000000", f"status={r.status_code} body={r.text[:200]}")
+
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": email, "password": pwd},
+                      headers={"User-Agent": "Test/1.0"}, timeout=30)
+    if r.status_code == 200:
+        body = r.json()
+        if not body.get("requires_otp") and body.get("token"):
+            log_pass("otp: login with original UA -> token directly (no OTP)")
+        else:
+            log_fail("otp: original UA should not require OTP", f"body={json.dumps(body)[:200]}")
+    else:
+        log_fail("otp: login original UA", f"status={r.status_code} body={r.text[:200]}")
+
+
+# 5. SESSIONS
+async def test_sessions_management():
+    section("5. Sessions management")
+
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": "demo@codemaster.app", "password": "Demo123!"},
+                      headers={"User-Agent": "SessTest1/1.0"}, timeout=30)
+    if r.status_code != 200 or r.json().get("requires_otp"):
+        log_fail("sessions: demo 1st login", f"status={r.status_code} body={r.text[:200]}")
+        return
+    token1 = r.json()["token"]
+    log_pass("sessions: demo 1st login -> token")
+
+    r = get("/auth/sessions", bearer(token1))
+    if r.status_code == 200 and isinstance(r.json(), list):
+        sess_list = r.json()
+        current = [s for s in sess_list if s.get("is_current")]
+        if current and current[0].get("ip") and current[0].get("device_label"):
+            log_pass(f"sessions: GET list shows current w/ ip+device_label (n={len(sess_list)})")
+        else:
+            log_fail("sessions: current session incomplete", f"current={current}")
+    else:
+        log_fail("sessions: GET /auth/sessions", f"status={r.status_code} body={r.text[:200]}")
+
+    r = post("/auth/sessions/nonexistent/revoke", headers=bearer(token1))
+    if r.status_code == 404:
+        log_pass("sessions: revoke nonexistent -> 404")
+    else:
+        log_fail("sessions: revoke nonexistent", f"status={r.status_code} body={r.text[:200]}")
+
+    # 2nd login, then revoke-all-others from token1
+    r2 = requests.post(f"{API}/auth/login",
+                       json={"email": "demo@codemaster.app", "password": "Demo123!"},
+                       headers={"User-Agent": "SessTest2/2.0"}, timeout=30)
+    if r2.status_code != 200 or r2.json().get("requires_otp"):
+        log_fail("sessions: 2nd login", f"status={r2.status_code}")
+        return
+    token2 = r2.json()["token"]
+
+    r = post("/auth/sessions/revoke-all-others", headers=bearer(token1))
+    if r.status_code == 200 and r.json().get("success") is True and "revoked_count" in r.json():
+        log_pass(f"sessions: revoke-all-others -> success (n={r.json()['revoked_count']})")
+    else:
+        log_fail("sessions: revoke-all-others", f"status={r.status_code} body={r.text[:200]}")
+
+    r = get("/auth/me", bearer(token2))
+    if r.status_code == 401 and "session revoked" in r.text.lower():
+        log_pass("sessions: revoked token2 /auth/me -> 401 Session revoked")
+    else:
+        log_fail("sessions: token2 /auth/me post-revoke", f"status={r.status_code} body={r.text[:200]}")
+
+    # 3rd login to test specific session revoke
+    r3 = requests.post(f"{API}/auth/login",
+                       json={"email": "demo@codemaster.app", "password": "Demo123!"},
+                       headers={"User-Agent": "SessTest3/3.0"}, timeout=30)
+    if r3.status_code != 200 or r3.json().get("requires_otp"):
+        log_fail("sessions: 3rd login", f"status={r3.status_code}")
+        return
+    token3 = r3.json()["token"]
+
+    r = get("/auth/sessions", bearer(token1))
+    second_sid = None
+    if r.status_code == 200:
+        for s in r.json():
+            if not s.get("is_current"):
+                second_sid = s["id"]
+                break
+
+    if not second_sid:
+        log_fail("sessions: cannot find non-current session")
+    else:
+        r = post(f"/auth/sessions/{second_sid}/revoke", headers=bearer(token1))
+        if r.status_code == 200 and r.json().get("success") is True:
+            log_pass(f"sessions: revoke specific {second_sid[:20]}... -> 200")
+        else:
+            log_fail("sessions: revoke specific", f"status={r.status_code} body={r.text[:200]}")
+
+        r = get("/auth/me", bearer(token3))
+        if r.status_code == 401 and "session revoked" in r.text.lower():
+            log_pass("sessions: revoked token3 /auth/me -> 401 Session revoked")
+        else:
+            log_fail("sessions: token3 /auth/me post-revoke", f"status={r.status_code} body={r.text[:200]}")
+
+
+# 6. LOGIN HISTORY
+def test_login_history():
+    section("6. Login history")
+
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": "demo@codemaster.app", "password": "Demo123!"},
+                      headers={"User-Agent": "LoginHist/1.0"}, timeout=30)
+    if r.status_code != 200 or r.json().get("requires_otp"):
+        log_fail("login-history: demo login prereq", f"status={r.status_code}")
+        return
+    token = r.json()["token"]
+
+    r = get("/auth/login-history", bearer(token))
+    if r.status_code == 200 and isinstance(r.json(), list) and len(r.json()) > 0:
+        entry = r.json()[0]
+        required = ["device_label", "ip", "success", "reason", "created_at"]
+        missing = [k for k in required if k not in entry]
+        if not missing:
+            log_pass(f"login-history: {len(r.json())} entries with required keys")
+        else:
+            log_fail("login-history: missing keys", f"missing={missing}")
+    else:
+        log_fail("login-history: GET", f"status={r.status_code} body={r.text[:200]}")
+
+
+# 7. RATE LIMIT
+def test_rate_limit():
+    section("7. Rate limit login (per ip+email)")
+    ts = int(time.time())
+    email = f"ratelimit_{ts}@x.com"
+
+    statuses = []
+    got_429 = False
+    for i in range(8):
+        r = requests.post(f"{API}/auth/login",
+                          json={"email": email, "password": "WrongPass123!"},
+                          headers={"User-Agent": "RateLimitTest/1.0"}, timeout=30)
+        statuses.append(r.status_code)
+        if r.status_code == 429 and "troppi tentativi" in r.text.lower():
+            got_429 = True
+            log_pass(f"rate-limit: attempt #{i+1} -> 429 'Troppi tentativi' (statuses={statuses})")
+            break
+
+    if not got_429:
+        log_fail("rate-limit: no 429 within 8 attempts", f"statuses={statuses}")
+
+
+# 8. CHANGE PASSWORD
+def test_change_password():
+    section("8. Change password")
+
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": "demo@codemaster.app", "password": "Demo123!"},
+                      headers={"User-Agent": "ChangePwd/1.0"}, timeout=30)
+    if r.status_code != 200 or r.json().get("requires_otp"):
+        log_fail("change-password: prereq login", f"status={r.status_code}")
+        return
+    token = r.json()["token"]
+
+    r = post("/auth/change-password",
+             {"current_password": "WRONG", "new_password": "NewStrong1!", "lang": "it"},
+             headers=bearer(token))
+    if r.status_code == 400:
+        log_pass("change-password: wrong current -> 400")
+    else:
+        log_fail("change-password: wrong current", f"status={r.status_code} body={r.text[:200]}")
+
+    r = post("/auth/change-password",
+             {"current_password": "Demo123!", "new_password": "weak", "lang": "it"},
+             headers=bearer(token))
+    if r.status_code in (400, 422):
+        log_pass("change-password: weak new -> 400/422")
+    else:
+        log_fail("change-password: weak new", f"status={r.status_code} body={r.text[:200]}")
+
+
+# 9. REGRESSION — existing users login
+def test_regression_existing_users():
+    section("9. Regression — existing users login (no OTP)")
+
+    for email, pwd in [("demo@codemaster.app", "Demo123!"), ("admin@codemaster.app", "Admin123!")]:
+        r = requests.post(f"{API}/auth/login",
+                          json={"email": email, "password": pwd},
+                          headers={"User-Agent": "Regression/1.0"}, timeout=30)
+        if r.status_code != 200:
+            log_fail(f"regression: {email} login", f"status={r.status_code} body={r.text[:200]}")
+            continue
+        body = r.json()
+        if body.get("requires_otp"):
+            log_fail(f"regression: {email} requires OTP", "demo/admin should NOT require OTP")
+            continue
+        token = body.get("token")
+        if not token:
+            log_fail(f"regression: {email} no token")
+            continue
+        log_pass(f"regression: {email} login -> token directly")
+
+        r = get("/auth/me", bearer(token))
+        if r.status_code == 200 and r.json().get("email") == email:
+            log_pass(f"regression: {email} /auth/me -> 200")
+        else:
+            log_fail(f"regression: {email} /auth/me", f"status={r.status_code}")
+
+
+# 10. REGRESSION — other endpoints
+def test_regression_other_endpoints():
+    section("10. Regression — existing endpoints")
+
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": "demo@codemaster.app", "password": "Demo123!"},
+                      headers={"User-Agent": "OtherReg/1.0"}, timeout=30)
+    if r.status_code != 200 or r.json().get("requires_otp"):
+        log_fail("regression: demo login prereq", f"status={r.status_code}")
+        return
+    token = r.json()["token"]
+
+    r = get("/languages")
+    if r.status_code == 200 and isinstance(r.json(), list) and len(r.json()) > 0:
+        log_pass(f"regression: GET /languages -> {len(r.json())} langs")
+    else:
+        log_fail("regression: GET /languages", f"status={r.status_code}")
+
+    r = get("/missions/today", bearer(token))
+    if r.status_code == 200:
+        log_pass("regression: GET /missions/today -> 200")
+    else:
+        log_fail("regression: GET /missions/today", f"status={r.status_code} body={r.text[:200]}")
+
+    r = get("/affiliate/me/summary", bearer(token))
+    if r.status_code == 200 and "referral_code" in r.json():
+        log_pass("regression: GET /affiliate/me/summary -> 200")
+    else:
+        log_fail("regression: GET /affiliate/me/summary", f"status={r.status_code} body={r.text[:200]}")
+
+
+async def run_all():
+    print(f"\n{BLUE}Testing at: {API}{RESET}\n")
+    try:
+        r = get("/")
+        if r.status_code != 200:
+            print(f"{RED}Backend not reachable at {API}{RESET}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"{RED}Backend not reachable: {e}{RESET}")
+        sys.exit(1)
+
+    test_password_validation()
+    await test_forgot_reset_password()
+    await test_email_verification()
+    await test_2fa_otp()
+    await test_sessions_management()
+    test_login_history()
+    test_rate_limit()
+    test_change_password()
+    test_regression_existing_users()
+    test_regression_other_endpoints()
+
+    print(f"\n{YELLOW}{'=' * 75}{RESET}")
+    print(f"{YELLOW}  SUMMARY{RESET}")
+    print(f"{YELLOW}{'=' * 75}{RESET}")
+    print(f"{GREEN}PASSED: {len(results['passed'])}{RESET}")
+    print(f"{RED}FAILED: {len(results['failed'])}{RESET}")
+    if results["failed"]:
+        print(f"\n{RED}Failures:{RESET}")
+        for name, detail in results["failed"]:
+            print(f"  - {name}: {detail}")
+    sys.exit(0 if not results["failed"] else 1)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(run_all())

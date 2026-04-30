@@ -22,7 +22,12 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      await login(email.trim(), password);
+      const res = await login(email.trim(), password);
+      if (res?.requires_otp && res.challenge_id) {
+        // Navigate to OTP screen
+        router.push(`/(auth)/verify-otp?challenge_id=${res.challenge_id}&hint=${encodeURIComponent(res.email_hint || email)}` as any);
+        return;
+      }
       router.replace('/(tabs)/home');
     } catch (e: any) {
       Alert.alert('Login fallito', e?.response?.data?.detail || 'Credenziali non valide');
@@ -67,6 +72,10 @@ export default function Login() {
           </View>
 
           <PrimaryButton label={t('login', lang)} onPress={onSubmit} loading={loading} testID="login-submit" style={{ marginTop: 24 }} />
+
+          <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')} style={{ alignSelf: 'center', marginTop: 12 }} testID="forgot-password-link">
+            <Text style={styles.link}>{lang === 'it' ? 'Password dimenticata?' : 'Forgot password?'}</Text>
+          </TouchableOpacity>
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>{t('no_account', lang)} </Text>

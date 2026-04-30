@@ -26,7 +26,8 @@ interface AuthCtx {
   loading: boolean;
   lang: Lang;
   setLang: (l: Lang) => void;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ requires_otp?: boolean; challenge_id?: string; email_hint?: string }>;
+  verifyOtp: (challenge_id: string, code: string) => Promise<void>;
   register: (email: string, password: string, name: string, refCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -62,10 +63,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const { data } = await api.post('/auth/login', { email, password });
+    if (data?.requires_otp) {
+      // Don't store token; caller will navigate to OTP screen
+      return { requires_otp: true, challenge_id: data.challenge_id, email_hint: data.email_hint };
+    }
     await tokenStore.set(data.token);
     setUser(data.user);
     if (data.user?.language) setLangState(data.user.language as Lang);
-    // Register push token (fire and forget)
+    import('./push').then(m => m.registerPushToken().catch(() => {}));
+    return {};
+  };
+
+  const verifyOtp = async (challenge_id: string, code: string) => {
+    const { data } = await api.post('/auth/verify-otp', { challenge_id, code });
+    await tokenStore.set(data.token);
+    setUser(data.user);
+    if (data.user?.language) setLangState(data.user.language as Lang);
     import('./push').then(m => m.registerPushToken().catch(() => {}));
   };
 
@@ -85,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ user, loading, lang, setLang, login, register, logout, refresh }}>
+    <Ctx.Provider value={{ user, loading, lang, setLang, login, verifyOtp, register, logout, refresh }}>
       {children}
     </Ctx.Provider>
   );

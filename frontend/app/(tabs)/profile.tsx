@@ -125,6 +125,7 @@ export default function Profile() {
             <MenuRow icon="shield-crown" label={t('admin_panel', lang)} onPress={() => router.push('/admin')} color={colors.primary.purple} testID="menu-admin" />
           )}
           <MenuRow icon="cash-multiple" label="Programma Affiliati" onPress={() => router.push('/affiliate')} color={colors.primary.purple} testID="menu-affiliate" />
+          <MenuRow icon="shield-lock" label={lang === 'it' ? 'Sicurezza' : 'Security'} onPress={() => router.push('/security')} color={colors.status.success} testID="menu-security" />
           <MenuRow icon="logout" label={t('logout', lang)} onPress={onLogout} color={colors.status.error} testID="menu-logout" />
         </View>
 
